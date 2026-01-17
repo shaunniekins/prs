@@ -79,35 +79,35 @@ WHERE "Email" = 'admin@example.com';
 
 ### Tables
 
-| Table | Description |
-|-------|-------------|
-| `Role` | User roles (admin, nurse, patient) |
-| `Users` | User profiles linked to Supabase Auth |
-| `Staff` | Medical staff information |
-| `Patients` | Patient information |
-| `Appointment` | Scheduled appointments |
-| `Diagnosis` | Diagnosis lookup table |
-| `Treatment` | Treatment lookup table |
-| `MedicalRecord` | Patient medical records |
-| `Notes` | Consultation notes |
-| `Notification` | System notifications |
-| `UserSessions` | Active session tracking |
+| Table           | Description                           |
+| --------------- | ------------------------------------- |
+| `Role`          | User roles (admin, nurse, patient)    |
+| `Users`         | User profiles linked to Supabase Auth |
+| `Staff`         | Medical staff information             |
+| `Patients`      | Patient information                   |
+| `Appointment`   | Scheduled appointments                |
+| `Diagnosis`     | Diagnosis lookup table                |
+| `Treatment`     | Treatment lookup table                |
+| `MedicalRecord` | Patient medical records               |
+| `Notes`         | Consultation notes                    |
+| `Notification`  | System notifications                  |
+| `UserSessions`  | Active session tracking               |
 
 ### Views
 
-| View | Description |
-|------|-------------|
-| `appointment_details` | Appointment with patient and staff names |
-| `patient_summary` | Patient with record and appointment counts |
+| View                  | Description                                |
+| --------------------- | ------------------------------------------ |
+| `appointment_details` | Appointment with patient and staff names   |
+| `patient_summary`     | Patient with record and appointment counts |
 
 ### Functions
 
-| Function | Description |
-|----------|-------------|
-| `get_user_role()` | Returns current user's role |
-| `is_admin()` | Returns true if current user is admin |
-| `is_staff()` | Returns true if current user is admin or nurse |
-| `is_patient()` | Returns true if current user is patient |
+| Function          | Description                                    |
+| ----------------- | ---------------------------------------------- |
+| `get_user_role()` | Returns current user's role                    |
+| `is_admin()`      | Returns true if current user is admin          |
+| `is_staff()`      | Returns true if current user is admin or nurse |
+| `is_patient()`    | Returns true if current user is patient        |
 
 ## Row Level Security (RLS)
 
@@ -130,10 +130,10 @@ The frontend uses these files for Supabase integration:
 
 ```javascript
 // Import the supabase client
-import { supabase } from '@/services/supabaseService';
+import { supabase } from "@/services/supabaseService";
 
 // Or use the composable
-import { useSupabase } from '@/composables/useSupabase';
+import { useSupabase } from "@/composables/useSupabase";
 
 const { patientOps, loading, error } = useSupabase();
 
@@ -144,46 +144,16 @@ const patients = await patientOps.getAllPatients();
 ### Real-time Subscriptions
 
 ```javascript
-import { realtimeService } from '@/services/supabaseService';
+import { realtimeService } from "@/services/supabaseService";
 
 // Subscribe to patient changes
 const subscription = realtimeService.subscribeToPatients((payload) => {
-  console.log('Patient changed:', payload);
+  console.log("Patient changed:", payload);
 });
 
 // Unsubscribe when done
 realtimeService.unsubscribe(subscription);
 ```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **"relation does not exist"**
-   - Run the complete-schema.sql again
-   - Check if you're connected to the correct database
-
-2. **"permission denied"**
-   - Verify RLS policies are created
-   - Check if the user has the correct role
-   - Ensure secret key (SUPABASE_SECRET_KEY) is used for server-side operations
-
-3. **"JWT expired"**
-   - The client automatically refreshes tokens
-   - Try signing out and back in
-
-4. **Real-time not working**
-   - Enable real-time for the table in Supabase Dashboard
-   - Check if RLS allows the subscription
-
-### Enable Real-time for Tables
-
-1. Go to **Database** → **Replication**
-2. Enable replication for the tables you want real-time updates on:
-   - Patients
-   - Appointment
-   - MedicalRecord
-   - Notification
 
 ## File Structure
 
@@ -211,4 +181,4 @@ For issues with Supabase setup, check:
 - [Supabase Discord](https://discord.supabase.com)
 
 SEED:
- node src/supabase/seed-auth-users.js
+node src/supabase/seed-auth-users.js

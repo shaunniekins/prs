@@ -31,12 +31,9 @@ The admin can manage staff members through the **Manage Staff** module:
   - **Default Password**: `Surname_Firstname<last-4-digits-of-contact-number>`
     - Example: For "Juan Dela Cruz" with contact "09171234567", password would be `DelaCruz_Juan4567`
   - Credentials are displayed after creation for secure sharing with the staff member
-  
 - **Edit Staff**: Update staff information including name, contact details, and status
-  
 - **Delete Staff**: Remove staff members from the system
   - ⚠️ **Note**: The system administrator account (`admin@clinic.com`) cannot be deleted for security purposes
-  
 - **Last Login Tracking**: The system displays the last sign-in time for each staff member from Supabase Auth
 
 #### Nurse Features
@@ -137,12 +134,12 @@ npm run server
 
    # Configure your Supabase credentials
    # Get these from: Supabase Dashboard -> Settings -> API
-   
+
    VITE_SUPABASE_URL=your_supabase_url
-   
+
    # Frontend key (publishable)
    VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_xxx
-   
+
    # Backend key (secret, server-side only)
    SUPABASE_SECRET_KEY=sb_secret_xxx
    ```
@@ -150,7 +147,7 @@ npm run server
 4. **Start development server**
 
    ```bash
-   npm run dev
+   npm run dev:full
    ```
 
 5. **Access the application**
@@ -242,6 +239,18 @@ src/
 npm run build
 ```
 
+### Run in Production
+
+To run the application in production mode (serves the built frontend from the express server):
+
+```bash
+# Set environment to production
+export NODE_ENV=production
+
+# Start the server
+npm start
+```
+
 ## 📊 Database Schema
 
 See the detailed schema in the project requirements for table structures including:
@@ -276,42 +285,3 @@ npm run test:unit
 # Run e2e tests
 npm run test:e2e
 ```
-
-## 📚 Documentation
-
-- **Component Documentation**: Available in each component file
-- **API Documentation**: Supabase auto-generated docs
-- **User Guide**: In-app help and tooltips
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🆘 Support
-
-For support and questions:
-
-- Create an issue in the repository
-- Contact the development team
-- Check the documentation
-
-## 🎯 Future Enhancements
-
-- [ ] Real-time notifications with WebSockets
-- [ ] Advanced reporting with charts
-- [ ] Mobile app (React Native)
-- [ ] Telemedicine features
-- [ ] AI-powered health insights
-- [ ] Integration with medical devices
-
----
-
-### Built with ❤️ for Barangay Baan KM-3
