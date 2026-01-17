@@ -78,22 +78,18 @@ const fetchMedicalRecords = async () => {
       return;
     }
 
-    console.log("Fetching patient profile first...");
-
     // First get the patient profile to get PatientID
     const patientData = await patientOps.getMyPatients();
     if (!patientData || patientData.length === 0) {
-      console.log("No patient profile found");
       medicalRecords.value = [];
       return;
     }
 
     patientProfile.value = patientData[0];
-    console.log("Patient profile loaded:", patientProfile.value.PatientID);
 
     // Fetch medical records using PatientID
     const records = await medicalRecordOps.getMedicalRecordsByPatient(
-      patientProfile.value.PatientID
+      patientProfile.value.PatientID,
     );
 
     medicalRecords.value = (records || []).map((record) => ({
@@ -119,10 +115,6 @@ const fetchMedicalRecords = async () => {
       createdAt: record.created_at,
       updatedAt: record.updated_at,
     }));
-
-    console.log(
-      `Successfully loaded ${medicalRecords.value.length} medical records`
-    );
   } catch (err) {
     console.error("Error fetching medical records:", err);
     error.value =
@@ -172,20 +164,14 @@ const downloadRecord = (record) => {
     plan: record.plan,
   };
 
-  console.log("Downloading record:", recordData);
-  // In a real application, this would generate and download a PDF file
   alert("Medical record download would be implemented here");
 };
 
 const printRecord = (record) => {
-  console.log("Printing record:", record);
-  // In a real application, this would open a print dialog
   alert("Print functionality would be implemented here");
 };
 
 const requestRecordAccess = () => {
-  console.log("Requesting record access");
-  // In a real application, this would send a request for record access
   alert("Record access request would be processed");
 };
 
@@ -313,7 +299,7 @@ onMounted(() => {
             <h4 class="mb-1">
               {{
                 filteredRecords.filter(
-                  (r) => r.type?.toLowerCase() === "consultation"
+                  (r) => r.type?.toLowerCase() === "consultation",
                 ).length
               }}
             </h4>
@@ -330,7 +316,7 @@ onMounted(() => {
             <h4 class="mb-1">
               {{
                 filteredRecords.filter(
-                  (r) => r.type?.toLowerCase() === "vaccination"
+                  (r) => r.type?.toLowerCase() === "vaccination",
                 ).length
               }}
             </h4>
@@ -427,7 +413,7 @@ onMounted(() => {
                   <span
                     class="badge"
                     :class="`bg-${getTypeBadgeVariant(
-                      record.type || 'Consultation'
+                      record.type || 'Consultation',
                     )}`"
                   >
                     {{ record.type || "Consultation" }}
@@ -531,7 +517,7 @@ onMounted(() => {
                       <span
                         class="badge ms-2"
                         :class="`bg-${getTypeBadgeVariant(
-                          record.type || 'Consultation'
+                          record.type || 'Consultation',
                         )}`"
                       >
                         {{ record.type || "Consultation" }}
@@ -539,7 +525,7 @@ onMounted(() => {
                       <span
                         class="badge ms-2"
                         :class="`bg-${getStatusBadgeVariant(
-                          record.status || 'Final'
+                          record.status || 'Final',
                         )}`"
                       >
                         {{ record.status || "Final" }}
@@ -701,7 +687,7 @@ onMounted(() => {
                     <h4 class="mb-1">
                       {{
                         formatDate(
-                          selectedRecord.date || selectedRecord.createdAt
+                          selectedRecord.date || selectedRecord.createdAt,
                         )
                       }}
                       -
@@ -722,7 +708,7 @@ onMounted(() => {
                     <span
                       class="badge ms-2"
                       :class="`bg-${getTypeBadgeVariant(
-                        selectedRecord.type || 'Consultation'
+                        selectedRecord.type || 'Consultation',
                       )}`"
                     >
                       {{ selectedRecord.type || "Consultation" }}
@@ -732,7 +718,7 @@ onMounted(() => {
                     <strong>Date:</strong>
                     {{
                       formatDate(
-                        selectedRecord.date || selectedRecord.createdAt
+                        selectedRecord.date || selectedRecord.createdAt,
                       )
                     }}
                   </div>
@@ -741,7 +727,7 @@ onMounted(() => {
                     <span
                       class="badge ms-2"
                       :class="`bg-${getStatusBadgeVariant(
-                        selectedRecord.status || 'Final'
+                        selectedRecord.status || 'Final',
                       )}`"
                     >
                       {{ selectedRecord.status || "Final" }}
@@ -907,7 +893,9 @@ onMounted(() => {
 }
 
 .stats-card {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .stats-card:hover {
@@ -951,7 +939,9 @@ onMounted(() => {
 
 .recent-record-card {
   background-color: var(--light-color);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .recent-record-card:hover {
@@ -961,7 +951,9 @@ onMounted(() => {
 
 .health-summary-item {
   background-color: var(--light-color);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .health-summary-item:hover {

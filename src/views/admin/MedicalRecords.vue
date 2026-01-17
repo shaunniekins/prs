@@ -82,7 +82,7 @@ const filteredRecords = computed(() => {
   // Apply status filter
   if (filterStatus.value !== "all") {
     filtered = filtered.filter(
-      (record) => record.Status === filterStatus.value
+      (record) => record.Status === filterStatus.value,
     );
   }
 
@@ -116,13 +116,13 @@ const recentRecords = computed(() => {
 const stats = computed(() => {
   const total = medicalRecords.value.length;
   const drafts = medicalRecords.value.filter(
-    (r) => r.Status === "Draft"
+    (r) => r.Status === "Draft",
   ).length;
   const finals = medicalRecords.value.filter(
-    (r) => r.Status === "Final"
+    (r) => r.Status === "Final",
   ).length;
   const amended = medicalRecords.value.filter(
-    (r) => r.Status === "Amended"
+    (r) => r.Status === "Amended",
   ).length;
 
   return { total, drafts, finals, amended };
@@ -148,7 +148,7 @@ const visiblePages = computed(() => {
         total - 3,
         total - 2,
         total - 1,
-        total
+        total,
       );
     } else {
       pages.push(
@@ -158,7 +158,7 @@ const visiblePages = computed(() => {
         current,
         current + 1,
         current + 2,
-        total
+        total,
       );
     }
   }
@@ -188,7 +188,7 @@ const createMedicalRecord = async () => {
   } catch (err) {
     console.error("Error creating medical record:", err);
     alert(
-      "Error creating record: " + (err.message || "Unknown error occurred")
+      "Error creating record: " + (err.message || "Unknown error occurred"),
     );
   }
 };
@@ -201,7 +201,7 @@ const updateMedicalRecord = async () => {
   try {
     await medicalRecordOps.updateMedicalRecord(
       selectedRecord.value.MedicalRecordID,
-      recordForm.value
+      recordForm.value,
     );
     // Refresh data
     const data = await medicalRecordOps.getAllMedicalRecords();
@@ -211,14 +211,14 @@ const updateMedicalRecord = async () => {
   } catch (err) {
     console.error("Error updating medical record:", err);
     alert(
-      "Error updating record: " + (err.message || "Unknown error occurred")
+      "Error updating record: " + (err.message || "Unknown error occurred"),
     );
   }
 };
 
 const deleteMedicalRecord = () => {
   medicalRecords.value = medicalRecords.value.filter(
-    (record) => record.MedicalRecordID !== selectedRecord.value.MedicalRecordID
+    (record) => record.MedicalRecordID !== selectedRecord.value.MedicalRecordID,
   );
 
   closeDeleteModal();
@@ -397,22 +397,14 @@ const exportRecord = (record) => {
     staffName: getStaffName(record),
   };
 
-  console.log("Exporting record:", exportData);
-  // In a real application, this would generate a PDF or export file
   alert("Record export functionality would be implemented here");
 };
 
 const printRecord = (record) => {
-  console.log("Printing record:", record);
-  // In a real application, this would open a print dialog
   alert("Print functionality would be implemented here");
 };
 
-// Removed watch as it's no longer necessary with mock data
-
-// Initialize component
 onMounted(async () => {
-  // Initialize auth if needed
   if (!authStore.isInitialized) {
     await authStore.initializeAuth();
   }
@@ -449,7 +441,7 @@ onMounted(async () => {
   } catch (err) {
     console.error("Error initializing medical records:", err);
     alert(
-      "Failed to load medical records data. Please refresh the page or contact support if the problem persists."
+      "Failed to load medical records data. Please refresh the page or contact support if the problem persists.",
     );
     // Set data to empty arrays to prevent further errors and maintain component stability
     medicalRecords.value = [];
@@ -888,7 +880,7 @@ onMounted(async () => {
                     <span
                       class="badge ms-2"
                       :class="`bg-${getStatusBadgeVariant(
-                        selectedRecord.Status
+                        selectedRecord.Status,
                       )}`"
                     >
                       {{ selectedRecord.Status }}
@@ -1394,7 +1386,9 @@ onMounted(async () => {
 }
 
 .stats-card {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .stats-card:hover {
@@ -1438,7 +1432,9 @@ onMounted(async () => {
 
 .recent-record-card {
   background-color: var(--light-color);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .recent-record-card:hover {

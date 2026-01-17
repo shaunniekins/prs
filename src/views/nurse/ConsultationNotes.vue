@@ -202,7 +202,6 @@ const addNote = async () => {
     if (newNote) {
       consultationNotes.value.push(newNote);
       closeModals();
-      console.log("Note added successfully");
     } else {
       operationError.value =
         "Failed to create note. Please check your input and try again.";
@@ -235,20 +234,19 @@ const updateNote = async () => {
 
     const updatedNote = await consultationNotesOps.updateConsultationNote(
       selectedNote.value.NoteID || selectedNote.value.id,
-      noteData
+      noteData,
     );
 
     if (updatedNote) {
       const index = consultationNotes.value.findIndex(
         (n) =>
           (n.NoteID || n.id) ===
-          (selectedNote.value.NoteID || selectedNote.value.id)
+          (selectedNote.value.NoteID || selectedNote.value.id),
       );
       if (index !== -1) {
         consultationNotes.value[index] = updatedNote;
       }
       closeModals();
-      console.log("Note updated successfully");
     } else {
       operationError.value =
         "Failed to update note. Please check your input and try again.";
@@ -295,14 +293,10 @@ const exportNote = (note) => {
     staffName: note.staffName,
   };
 
-  console.log("Exporting note:", exportData);
-  // In a real application, this would generate a PDF or export file
   alert("Note export functionality would be implemented here");
 };
 
 const printNote = (note) => {
-  console.log("Printing note:", note);
-  // In a real application, this would open a print dialog
   alert("Print functionality would be implemented here");
 };
 
@@ -534,7 +528,7 @@ onMounted(async () => {
                   <span
                     class="badge"
                     :class="`bg-${getTypeBadgeVariant(
-                      getNoteField(note, 'type')
+                      getNoteField(note, 'type'),
                     )}`"
                   >
                     {{ getNoteField(note, "type") }}
@@ -554,7 +548,7 @@ onMounted(async () => {
                   <span
                     class="badge"
                     :class="`bg-${getStatusBadgeVariant(
-                      getNoteField(note, 'status')
+                      getNoteField(note, 'status'),
                     )}`"
                   >
                     {{ getNoteField(note, "status") }}
@@ -563,7 +557,7 @@ onMounted(async () => {
                 <td>
                   {{
                     new Date(
-                      getNoteField(note, "createdAt")
+                      getNoteField(note, "createdAt"),
                     ).toLocaleDateString()
                   }}
                 </td>
@@ -646,7 +640,7 @@ onMounted(async () => {
                       <span
                         class="badge ms-2"
                         :class="`bg-${getStatusBadgeVariant(
-                          getNoteField(note, 'status')
+                          getNoteField(note, 'status'),
                         )}`"
                       >
                         {{ getNoteField(note, "status") }}
@@ -654,7 +648,7 @@ onMounted(async () => {
                       <span
                         class="badge ms-2"
                         :class="`bg-${getTypeBadgeVariant(
-                          getNoteField(note, 'type')
+                          getNoteField(note, 'type'),
                         )}`"
                       >
                         {{ getNoteField(note, "type") }}
@@ -1095,7 +1089,7 @@ onMounted(async () => {
                     <span
                       class="badge ms-2"
                       :class="`bg-${getTypeBadgeVariant(
-                        getNoteField(selectedNote, 'type')
+                        getNoteField(selectedNote, 'type'),
                       )}`"
                     >
                       {{ getNoteField(selectedNote, "type") }}
@@ -1118,7 +1112,7 @@ onMounted(async () => {
                     <span
                       class="badge ms-2"
                       :class="`bg-${getStatusBadgeVariant(
-                        getNoteField(selectedNote, 'status')
+                        getNoteField(selectedNote, 'status'),
                       )}`"
                     >
                       {{ getNoteField(selectedNote, "status") }}
@@ -1296,7 +1290,9 @@ onMounted(async () => {
 }
 
 .stats-card {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .stats-card:hover {
@@ -1340,7 +1336,9 @@ onMounted(async () => {
 
 .recent-note-card {
   background-color: var(--light-color);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .recent-note-card:hover {

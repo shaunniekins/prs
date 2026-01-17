@@ -67,14 +67,14 @@ const filteredAppointments = computed(() => {
         .includes(search.value.toLowerCase()) ||
       (appointment.status || "")
         .toLowerCase()
-        .includes(search.value.toLowerCase())
+        .includes(search.value.toLowerCase()),
   );
 });
 
 const todayAppointments = computed(() => {
   const today = new Date().toDateString();
   return transformedAppointments.value.filter(
-    (appointment) => new Date(appointment.dateTime).toDateString() === today
+    (appointment) => new Date(appointment.dateTime).toDateString() === today,
   );
 });
 
@@ -84,7 +84,7 @@ const upcomingAppointments = computed(() => {
     .filter(
       (appointment) =>
         new Date(appointment.dateTime) > now &&
-        appointment.status !== "Cancelled"
+        appointment.status !== "Cancelled",
     )
     .slice(0, 5);
 });
@@ -119,7 +119,7 @@ const calendarDays = computed(() => {
         (appointment) => {
           const appointmentDate = new Date(appointment.dateTime);
           return appointmentDate.toDateString() === date.toDateString();
-        }
+        },
       );
 
       weekDays.push({
@@ -205,7 +205,7 @@ const openEditModal = (appointment) => {
 
   // Find the staff member for the selected appointment
   const staffMember = staffList.value.find(
-    (staff) => staff.StaffID === appointment.StaffID
+    (staff) => staff.StaffID === appointment.StaffID,
   );
 
   // Populate form with appointment data
@@ -271,7 +271,6 @@ const scheduleAppointment = async () => {
     // Refresh the appointments list to show the new appointment
     await fetchAppointments();
     closeModals();
-    console.log("Appointment scheduled successfully");
   } catch (error) {
     console.error("Error scheduling appointment:", error);
     errorMessage.value =
@@ -303,13 +302,12 @@ const updateAppointment = async () => {
     // Update appointment using Supabase
     await appointmentOps.updateAppointment(
       selectedAppointment.value.AppointmentID,
-      appointmentData
+      appointmentData,
     );
 
     // Refresh the appointments list to show the updated appointment
     await fetchAppointments();
     closeModals();
-    console.log("Appointment updated successfully");
   } catch (error) {
     console.error("Error updating appointment:", error);
     errorMessage.value =
@@ -329,13 +327,11 @@ const cancelAppointment = async () => {
       {
         Status: "Cancelled",
         Notes: updatedNotes,
-      }
+      },
     );
 
-    // Refresh the appointments list to show the cancelled appointment
     await fetchAppointments();
     closeModals();
-    console.log("Appointment cancelled successfully");
   } catch (error) {
     console.error("Error cancelling appointment:", error);
     errorMessage.value =
@@ -843,7 +839,7 @@ onMounted(async () => {
               calendarDays
                 .flat()
                 .find(
-                  (d) => d.date.toDateString() === selectedDate.toDateString()
+                  (d) => d.date.toDateString() === selectedDate.toDateString(),
                 )?.appointments.length > 0
             "
           >
@@ -852,7 +848,7 @@ onMounted(async () => {
               v-for="appointment in calendarDays
                 .flat()
                 .find(
-                  (d) => d.date.toDateString() === selectedDate.toDateString()
+                  (d) => d.date.toDateString() === selectedDate.toDateString(),
                 )?.appointments"
               :key="appointment.id"
               class="appointment-item d-flex justify-content-between align-items-center p-2 border rounded mb-2"
@@ -1282,7 +1278,9 @@ onMounted(async () => {
 }
 
 .stats-card {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .stats-card:hover {
@@ -1309,7 +1307,9 @@ onMounted(async () => {
 
 .appointment-card {
   background-color: var(--light-color);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .appointment-card:hover {

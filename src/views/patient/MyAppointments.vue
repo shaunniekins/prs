@@ -51,7 +51,8 @@ const upcomingAppointments = computed(() => {
   const now = new Date();
   return appointmentsList.value.filter(
     (appointment) =>
-      new Date(appointment.DateTime) > now && appointment.Status !== "Cancelled"
+      new Date(appointment.DateTime) > now &&
+      appointment.Status !== "Cancelled",
   );
 });
 
@@ -60,7 +61,7 @@ const pastAppointments = computed(() => {
   return appointmentsList.value.filter(
     (appointment) =>
       new Date(appointment.DateTime) <= now ||
-      appointment.Status === "Completed"
+      appointment.Status === "Completed",
   );
 });
 
@@ -186,13 +187,6 @@ const rescheduleAppointment = async () => {
       Status: "Pending", // Reset to pending when rescheduled
     };
 
-    // Mock updating appointment
-    console.log(
-      "Rescheduling appointment:",
-      selectedAppointment.value.AppointmentID,
-      updateData
-    );
-
     await fetchAppointments();
     closeModals();
 
@@ -216,12 +210,6 @@ const cancelAppointment = async () => {
   error.value = null;
 
   try {
-    // Mock cancelling appointment
-    console.log(
-      "Cancelling appointment:",
-      selectedAppointment.value.AppointmentID
-    );
-
     await fetchAppointments();
     closeModals();
 
@@ -870,7 +858,9 @@ onUnmounted(() => {
 }
 
 .stats-card {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .stats-card:hover {
@@ -896,7 +886,9 @@ onUnmounted(() => {
 
 .upcoming-appointment-card {
   background-color: var(--light-color);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .upcoming-appointment-card:hover {

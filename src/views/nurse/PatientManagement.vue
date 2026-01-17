@@ -162,8 +162,6 @@ const addPatient = () => {
   // Add to patients list
   patientsList.value.push(newPatient);
   closeModals();
-
-  console.log("Patient added successfully");
 };
 
 const updatePatient = () => {
@@ -173,7 +171,7 @@ const updatePatient = () => {
 
   // Find patient index
   const index = patientsList.value.findIndex(
-    (p) => p.PatientID === selectedPatient.value.PatientID
+    (p) => p.PatientID === selectedPatient.value.PatientID,
   );
   if (index !== -1) {
     // Update patient data
@@ -182,14 +180,13 @@ const updatePatient = () => {
       ...patientForm.value,
     };
     closeModals();
-    console.log("Patient updated successfully");
   }
 };
 
 const deletePatient = (patient) => {
   if (
     !confirm(
-      `Are you sure you want to delete patient ${patient.firstName} ${patient.surname}?`
+      `Are you sure you want to delete patient ${patient.firstName} ${patient.surname}?`,
     )
   ) {
     return;
@@ -197,21 +194,14 @@ const deletePatient = (patient) => {
 
   // Remove patient from list
   const index = patientsList.value.findIndex(
-    (p) => p.PatientID === patient.PatientID
+    (p) => p.PatientID === patient.PatientID,
   );
   if (index !== -1) {
     patientsList.value.splice(index, 1);
-    console.log("Patient deleted successfully");
   }
 };
 
 const recordVitals = () => {
-  console.log(
-    "Recording vitals for patient:",
-    selectedPatient.value.firstName,
-    vitalsForm.value
-  );
-  // In a real application, this would save vitals to the patient's record
   closeModals();
   alert("Vital signs recorded successfully!");
 };
@@ -251,14 +241,10 @@ const calculateAge = (birthDate) => {
 };
 
 const scheduleFollowUp = (patient) => {
-  console.log("Scheduling follow-up for patient:", patient.firstName);
-  // In a real application, this would open the appointment scheduling modal
   alert("Follow-up appointment scheduling would be implemented here");
 };
 
 const viewMedicalHistory = (patient) => {
-  console.log("Viewing medical history for patient:", patient.firstName);
-  // In a real application, this would navigate to the patient's medical records
   alert("Medical history view would be implemented here");
 };
 
@@ -290,8 +276,6 @@ const fetchPatients = async () => {
       lastVisit: "Never", // Would need appointment data to calculate this
       riskLevel: "Low", // Default value
     }));
-
-    console.log(`✅ Loaded ${patientsList.value.length} patients`);
   } catch (err) {
     console.error("❌ Error loading patients:", err);
     errorMessage.value = "Failed to load patient data. Please try again.";
@@ -303,8 +287,6 @@ const fetchPatients = async () => {
 
 // Handle real-time updates
 const handlePatientUpdate = (payload) => {
-  console.log("Real-time patient update:", payload);
-  // Re-fetch to get properly formatted data with joins
   fetchPatients();
 };
 
@@ -969,7 +951,7 @@ onUnmounted(() => {
                     <span
                       class="badge ms-2"
                       :class="`bg-${getRiskBadgeVariant(
-                        selectedPatient.riskLevel
+                        selectedPatient.riskLevel,
                       )}`"
                     >
                       {{ selectedPatient.riskLevel }} Risk
@@ -1024,7 +1006,7 @@ onUnmounted(() => {
                     <strong>Registration Date:</strong>
                     {{
                       new Date(
-                        selectedPatient.registrationDate
+                        selectedPatient.registrationDate,
                       ).toLocaleDateString()
                     }}
                   </div>
@@ -1034,7 +1016,7 @@ onUnmounted(() => {
                       selectedPatient.lastVisit === "Never"
                         ? "No visits yet"
                         : new Date(
-                            selectedPatient.lastVisit
+                            selectedPatient.lastVisit,
                           ).toLocaleDateString()
                     }}
                   </div>
@@ -1043,7 +1025,7 @@ onUnmounted(() => {
                     <span
                       class="badge ms-2"
                       :class="`bg-${getStatusBadgeVariant(
-                        selectedPatient.status
+                        selectedPatient.status,
                       )}`"
                     >
                       {{ selectedPatient.status }}
@@ -1295,7 +1277,9 @@ onUnmounted(() => {
 }
 
 .stats-card {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .stats-card:hover {

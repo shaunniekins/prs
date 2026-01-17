@@ -6,15 +6,13 @@ const router = express.Router();
 // Get all staff (with auth info including last_sign_in_at)
 router.get("/", async (req, res) => {
   try {
-    console.log("📡 [Server /api/staff] Fetching staff with auth info...");
     // Use the new method that includes auth info
     const { data, error } = await staffService.getAllStaffWithAuthInfo();
-    console.log("📊 [Server /api/staff] Result:", data?.length || 0, "records");
     if (error) {
       console.error("❌ [Server /api/staff] Error:", error);
       return res.status(500).json({ message: "Internal server error" });
     }
-    console.log("✅ [Server /api/staff] Sending response...");
+
     res.status(200).json(data);
   } catch (error) {
     console.error("❌ [Server /api/staff] Catch error:", error);
@@ -147,7 +145,7 @@ router.put("/:id", async (req, res) => {
 router.delete("/:id", async (req, res) => {
   try {
     const { data: staff, error: fetchError } = await staffService.getStaffById(
-      req.params.id
+      req.params.id,
     );
     if (fetchError) {
       console.error("Error fetching staff:", fetchError);
@@ -165,7 +163,7 @@ router.delete("/:id", async (req, res) => {
 
     // Delete staff
     const { error: deleteError } = await staffService.deleteStaff(
-      req.params.id
+      req.params.id,
     );
 
     if (deleteError) {

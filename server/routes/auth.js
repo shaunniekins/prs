@@ -35,7 +35,7 @@ const generateToken = (user) => {
       expiresIn: "24h", // Reasonable expiration for security
       issuer: "patient-record-system",
       audience: "patient-record-users",
-    }
+    },
   );
 };
 
@@ -96,11 +96,6 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    // Get user profile from Users table by email
-    console.log(
-      "🔍 Attempting to fetch user profile for email:",
-      data.user.email
-    );
     const { data: profile, error: profileError } = await supabase
       .from("Users")
       .select("*, Role(RoleName)")
@@ -116,8 +111,6 @@ router.post("/login", async (req, res) => {
         hint: profileError.hint,
       });
       // Continue with basic user info if profile fetch fails
-    } else {
-      console.log("✅ User profile fetched successfully:", profile);
     }
 
     const user = {

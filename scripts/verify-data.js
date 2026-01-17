@@ -17,8 +17,6 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 async function checkData() {
-  console.log("Checking database state...");
-
   // Check Roles
   const { count: roleCount, error: roleError } = await supabase
     .from("Role")

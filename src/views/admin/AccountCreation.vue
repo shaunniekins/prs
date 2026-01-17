@@ -143,7 +143,7 @@ const isFormValid = computed(() => {
     const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
     if (
       !phoneRegex.test(
-        accountForm.value.contactNumber.replace(/[\s\-\(\)]/g, "")
+        accountForm.value.contactNumber.replace(/[\s\-\(\)]/g, ""),
       )
     ) {
       formErrors.value.contactNumber = "Invalid phone number format.";
@@ -155,7 +155,7 @@ const isFormValid = computed(() => {
     const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
     if (
       !phoneRegex.test(
-        accountForm.value.emergencyContactNumber.replace(/[\s\-\(\)]/g, "")
+        accountForm.value.emergencyContactNumber.replace(/[\s\-\(\)]/g, ""),
       )
     ) {
       formErrors.value.emergencyContactNumber =
@@ -281,7 +281,7 @@ const fetchAccountCreationHistory = async (params = {}) => {
       "/api/admin/accounts/account-creation-history",
       {
         params,
-      }
+      },
     );
     accountHistory.value = response.data;
   } catch (error) {
@@ -349,20 +349,17 @@ const sendCredentials = async (retryCount = 0) => {
       error.message?.includes("timeout");
 
     if (isRetryableError && retryCount < maxRetries) {
-      console.log(
-        `Retrying credential sending... Attempt ${retryCount + 1}/${maxRetries}`
-      );
       notify(
         `Connection issue. Retrying... (${retryCount + 1}/${maxRetries})`,
         {
           type: "warning",
           duration: 2000,
-        }
+        },
       );
 
       // Wait before retrying
       await new Promise((resolve) =>
-        setTimeout(resolve, retryDelay * (retryCount + 1))
+        setTimeout(resolve, retryDelay * (retryCount + 1)),
       );
       return sendCredentials(retryCount + 1);
     }
@@ -487,20 +484,17 @@ const createAccount = async (retryCount = 0) => {
       error.message?.includes("timeout");
 
     if (isRetryableError && retryCount < maxRetries) {
-      console.log(
-        `Retrying account creation... Attempt ${retryCount + 1}/${maxRetries}`
-      );
       notify(
         `Connection issue. Retrying... (${retryCount + 1}/${maxRetries})`,
         {
           type: "warning",
           duration: 2000,
-        }
+        },
       );
 
       // Wait before retrying
       await new Promise((resolve) =>
-        setTimeout(resolve, retryDelay * (retryCount + 1))
+        setTimeout(resolve, retryDelay * (retryCount + 1)),
       );
       return createAccount(retryCount + 1);
     }

@@ -173,8 +173,6 @@ const addPatient = async () => {
     patientsList.value.unshift(formattedPatient);
 
     closeModals();
-
-    console.log("Patient added successfully");
   } catch (err) {
     console.error("Error adding patient:", err);
     error.value = "Failed to add patient";
@@ -210,12 +208,12 @@ const updatePatient = async () => {
     // Update patient via Supabase
     const updatedPatient = await patientOps.updatePatient(
       selectedPatient.value.PatientID,
-      patientData
+      patientData,
     );
 
     // Update in list
     const index = patientsList.value.findIndex(
-      (p) => p.PatientID === selectedPatient.value.PatientID
+      (p) => p.PatientID === selectedPatient.value.PatientID,
     );
     if (index !== -1) {
       patientsList.value[index] = {
@@ -226,7 +224,6 @@ const updatePatient = async () => {
     }
 
     closeModals();
-    console.log("Patient updated successfully");
   } catch (err) {
     console.error("Error updating patient:", err);
     error.value = "Failed to update patient";
@@ -250,11 +247,10 @@ const deletePatient = async () => {
 
     // Remove from list
     patientsList.value = patientsList.value.filter(
-      (p) => p.PatientID !== selectedPatient.value.PatientID
+      (p) => p.PatientID !== selectedPatient.value.PatientID,
     );
 
     closeModals();
-    console.log("Patient deleted successfully");
   } catch (err) {
     console.error("Error deleting patient:", err);
     error.value = "Failed to delete patient";
@@ -864,7 +860,7 @@ onMounted(async () => {
                     <strong>Registration Date:</strong>
                     {{
                       new Date(
-                        selectedPatient.registrationDate
+                        selectedPatient.registrationDate,
                       ).toLocaleDateString()
                     }}
                   </div>
@@ -873,7 +869,7 @@ onMounted(async () => {
                     <span
                       class="badge ms-2"
                       :class="`bg-${getStatusBadgeVariant(
-                        selectedPatient.status
+                        selectedPatient.status,
                       )}`"
                     >
                       {{ selectedPatient.status }}
@@ -890,7 +886,7 @@ onMounted(async () => {
                     {{
                       selectedPatient.lastVisit
                         ? new Date(
-                            selectedPatient.lastVisit
+                            selectedPatient.lastVisit,
                           ).toLocaleDateString()
                         : "No visits yet"
                     }}

@@ -21,14 +21,10 @@ if (!supabaseKey) {
 
 if (!supabaseKey.startsWith("sb_secret_")) {
   console.error(
-    "❌ Invalid SUPABASE_SECRET_KEY format. Should start with 'sb_secret_'"
+    "❌ Invalid SUPABASE_SECRET_KEY format. Should start with 'sb_secret_'",
   );
   throw new Error("Invalid SUPABASE_SECRET_KEY format");
 }
-
-console.log("Initializing Supabase client...");
-console.log("Supabase URL: Set");
-console.log("Supabase Key: secret key format");
 
 const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
@@ -38,12 +34,9 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
   },
 });
 
-console.log("Supabase client initialized successfully");
-
 // Test the connection
 export const testConnection = async () => {
   try {
-    console.log("Testing Supabase connection...");
     const { data, error } = await supabase
       .from("Role")
       .select("count")
@@ -55,7 +48,6 @@ export const testConnection = async () => {
       return false;
     }
 
-    console.log("Supabase connection has been established successfully.");
     return true;
   } catch (error) {
     console.error("Unable to connect to Supabase:", error);
@@ -87,14 +79,9 @@ export const initializeTables = async () => {
       .limit(1);
 
     if (error && error.code === "PGRST116") {
-      console.log(
-        "Tables do not exist. Please create the tables in Supabase first."
-      );
-      console.log("See DATABASE_SETUP.md for the SQL script.");
       return false;
     }
 
-    console.log("Database tables are ready.");
     return true;
   } catch (error) {
     console.error("Error checking tables:", error);

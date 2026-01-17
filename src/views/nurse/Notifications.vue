@@ -38,8 +38,6 @@ const fetchNotifications = async () => {
 // Subscribe to real-time updates
 const setupRealtimeSubscription = () => {
   notificationSubscription = subscribeToUserNotifications(async (payload) => {
-    console.log("Real-time notification update:", payload);
-    // Refresh notifications when new ones arrive
     await fetchNotifications();
   });
 };
@@ -120,7 +118,7 @@ const deleteNotification = async (notification) => {
   try {
     await notificationService.deleteNotification(notification.NotificationID);
     const index = notifications.value.findIndex(
-      (n) => n.NotificationID === notification.NotificationID
+      (n) => n.NotificationID === notification.NotificationID,
     );
     if (index !== -1) {
       notifications.value.splice(index, 1);
@@ -161,12 +159,10 @@ const formatDateTime = (dateTime) => {
 };
 
 const viewPatientRecord = (patientName) => {
-  console.log("Viewing patient record for:", patientName);
   alert(`View patient record for ${patientName} would be implemented here`);
 };
 
 const viewAppointment = (appointmentId) => {
-  console.log("Viewing appointment:", appointmentId);
   alert(`View appointment ${appointmentId} would be implemented here`);
 };
 </script>
@@ -232,7 +228,7 @@ const viewAppointment = (appointmentId) => {
             <h4 class="mb-1">
               {{
                 filteredNotifications.filter(
-                  (n) => n.Type === "appointment_reminder"
+                  (n) => n.Type === "appointment_reminder",
                 ).length
               }}
             </h4>
@@ -302,7 +298,7 @@ const viewAppointment = (appointmentId) => {
               <div class="notification-icon me-3">
                 <i
                   :class="`${getNotificationIcon(
-                    notification.Type
+                    notification.Type,
                   )} text-${getTypeBadgeVariant(notification.Type)} fs-4`"
                 ></i>
               </div>
@@ -323,7 +319,7 @@ const viewAppointment = (appointmentId) => {
                     <span
                       class="badge"
                       :class="`bg-${getStatusBadgeVariant(
-                        notification.IsRead ? 'read' : 'unread'
+                        notification.IsRead ? 'read' : 'unread',
                       )}`"
                     >
                       {{ notification.IsRead ? "read" : "unread" }}
@@ -441,7 +437,9 @@ const viewAppointment = (appointmentId) => {
 }
 
 .stats-card {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .stats-card:hover {

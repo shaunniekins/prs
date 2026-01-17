@@ -150,8 +150,6 @@ const scheduleAppointment = async () => {
 
     await appointmentStore.createAppointmentRequest(newAppointment);
     closeModals();
-
-    console.log("Appointment scheduled successfully");
   } catch (error) {
     console.error("Error scheduling appointment:", error);
   }
@@ -165,7 +163,6 @@ const approveAppointment = async (appointment) => {
 
   try {
     await appointmentStore.approveRequest(appointment.id);
-    console.log("Appointment approved:", appointment.id);
   } catch (error) {
     console.error("Error approving appointment:", error);
   }
@@ -184,10 +181,9 @@ const denyAppointment = async () => {
   try {
     await appointmentStore.denyRequest(
       selectedAppointment.value.id,
-      denyReason.value
+      denyReason.value,
     );
     closeModals();
-    console.log("Appointment denied:", selectedAppointment.value.id);
   } catch (error) {
     console.error("Error denying appointment:", error);
   }
@@ -212,10 +208,9 @@ const rescheduleAppointment = async () => {
 
     await appointmentStore.updateRequest(
       selectedAppointment.value.id,
-      updateData
+      updateData,
     );
     closeModals();
-    console.log("Appointment rescheduled successfully");
   } catch (error) {
     console.error("Error rescheduling appointment:", error);
   }
@@ -230,10 +225,9 @@ const cancelAppointment = async () => {
   try {
     await appointmentStore.denyRequest(
       selectedAppointment.value.id,
-      "Cancelled by nurse"
+      "Cancelled by nurse",
     );
     closeModals();
-    console.log("Appointment cancelled successfully");
   } catch (error) {
     console.error("Error cancelling appointment:", error);
   }
@@ -959,7 +953,7 @@ onUnmounted(() => {
                     <span
                       class="badge ms-2"
                       :class="`bg-${getTypeBadgeVariant(
-                        selectedAppointment.type
+                        selectedAppointment.type,
                       )}`"
                     >
                       {{ selectedAppointment.type }}
@@ -974,7 +968,7 @@ onUnmounted(() => {
                     <span
                       class="badge ms-2"
                       :class="`bg-${getPriorityBadgeVariant(
-                        selectedAppointment.priority
+                        selectedAppointment.priority,
                       )}`"
                     >
                       {{ selectedAppointment.priority }}
@@ -985,7 +979,7 @@ onUnmounted(() => {
                     <span
                       class="badge ms-2"
                       :class="`bg-${getStatusBadgeVariant(
-                        selectedAppointment.status
+                        selectedAppointment.status,
                       )}`"
                     >
                       {{ selectedAppointment.status }}
@@ -1180,7 +1174,9 @@ onUnmounted(() => {
 }
 
 .stats-card {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .stats-card:hover {

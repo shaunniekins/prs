@@ -80,21 +80,14 @@ const getStatusBadgeVariant = (status) => {
 };
 
 const bookAppointment = () => {
-  console.log("Booking new appointment");
-  // In a real application, this would open the appointment booking modal
-  // For now, navigate to appointments page
   window.location.href = "/patient/appointments";
 };
 
 const viewMedicalRecord = () => {
-  console.log("Viewing medical records");
-  // Navigate to medical records page
   window.location.href = "/patient/medical-records";
 };
 
 const updateProfile = () => {
-  console.log("Updating profile");
-  // In a real application, this would navigate to profile update
   alert("Profile update would be implemented here");
 };
 
@@ -104,69 +97,36 @@ const fetchData = async () => {
   error.value = null;
 
   try {
-    console.log("🔍 [Dashboard] Starting data fetch...");
-
-    // Ensure auth is initialized before fetching data
     if (!authStore.isInitialized) {
-      console.log("🔍 [Dashboard] Initializing auth...");
       await authStore.initializeAuth();
     }
 
-    // Check if user is authenticated
     if (!authStore.isAuthenticated || !authStore.user) {
       throw new Error("Please log in to view the dashboard");
     }
 
-    console.log("✅ [Dashboard] Auth initialized, user:", authStore.user?.id);
-
-    // Fetch patient's appointments
-    console.log("🔍 [Dashboard] Fetching appointments...");
     const appointmentsResult = await appointments.getMyAppointments();
-    console.log(
-      "✅ [Dashboard] Appointments fetched:",
-      appointmentsResult?.length || 0
-    );
+
     appointmentsData.value = appointmentsResult || [];
 
-    // Fetch patient profile data first to get PatientID
-    console.log("🔍 [Dashboard] Fetching patient profile...");
     const patientResult = await patients.getMyPatients();
-    console.log("✅ [Dashboard] Patient profile fetched:", patientResult);
+
     patientData.value =
       patientResult && patientResult.length > 0 ? patientResult[0] : null;
 
-    // Fetch patient's medical records using PatientID
     if (patientData.value?.PatientID) {
-      console.log(
-        "🔍 [Dashboard] Fetching medical records for PatientID:",
-        patientData.value.PatientID
-      );
       const recordsResult = await medicalRecords.getMedicalRecordsByPatient(
-        patientData.value.PatientID
+        patientData.value.PatientID,
       );
-      console.log(
-        "✅ [Dashboard] Medical records fetched:",
-        recordsResult?.length || 0
-      );
+
       medicalRecordsData.value = recordsResult || [];
     } else {
-      console.log(
-        "⚠️ [Dashboard] No PatientID found, skipping medical records"
-      );
       medicalRecordsData.value = [];
     }
 
-    // Compute stats
-    console.log("🔍 [Dashboard] Computing stats...");
     computeStats();
-    console.log("✅ [Dashboard] Stats computed successfully");
   } catch (err) {
     console.error("❌ [Dashboard] Error fetching dashboard data:", err);
-    console.error("❌ [Dashboard] Error details:", {
-      message: err.message,
-      stack: err.stack,
-      name: err.name,
-    });
     error.value =
       err.message || "Failed to load dashboard data. Please try again.";
   } finally {
@@ -389,7 +349,7 @@ onUnmounted(() => {
                           <span
                             class="badge"
                             :class="`bg-${getStatusBadgeVariant(
-                              appointment.Status
+                              appointment.Status,
                             )}`"
                           >
                             {{ appointment.Status || "Pending" }}
@@ -553,7 +513,9 @@ onUnmounted(() => {
 
 <style scoped>
 .stats-card {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .stats-card:hover {

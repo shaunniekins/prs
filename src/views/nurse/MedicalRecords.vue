@@ -281,7 +281,7 @@ const updateRecord = async () => {
       selectedRecord.value.MedicalRecordID || selectedRecord.value.id;
     const result = await medicalRecordsStore.updateMedicalRecord(
       recordId,
-      updateData
+      updateData,
     );
 
     if (result.success) {
@@ -349,8 +349,6 @@ const exportRecord = (record) => {
     type: record.Type || record.type || "",
   };
 
-  console.log("Exporting record:", exportData);
-
   // Create a simple text export
   const exportText = `
 MEDICAL RECORD EXPORT
@@ -413,7 +411,7 @@ const printRecord = (record) => {
           <p><span class="label">Patient:</span> ${getPatientName(record)}</p>
           <p><span class="label">Provider:</span> ${getStaffName(record)}</p>
           <p><span class="label">Date:</span> ${formatDateTime(
-            record.created_at
+            record.created_at,
           )}</p>
         </div>
 
@@ -428,10 +426,10 @@ const printRecord = (record) => {
         <div class="section">
           <h3>Medical Information</h3>
           <p><span class="label">Diagnosis:</span> ${getDiagnosisName(
-            record
+            record,
           )}</p>
           <p><span class="label">Treatment:</span> ${getTreatmentName(
-            record
+            record,
           )}</p>
           <p><span class="label">Notes:</span> ${
             record.Notes || record.notes || "No additional notes"
@@ -444,13 +442,13 @@ const printRecord = (record) => {
             ${Object.entries(record.VitalSigns || record.vitalSigns || {})
               .filter(
                 ([key]) =>
-                  key !== "OxygenSaturation" && key !== "RespiratoryRate"
+                  key !== "OxygenSaturation" && key !== "RespiratoryRate",
               )
               .map(
                 ([key, value]) =>
                   `<div class="vital-sign"><span class="label">${key}:</span> ${
                     value || "Not recorded"
-                  }</div>`
+                  }</div>`,
               )
               .join("")}
           </div>
@@ -535,8 +533,6 @@ const setupRealtimeSubscription = () => {
   }
 
   realtimeSubscription.value = subscribeToTable("MedicalRecord", (payload) => {
-    console.log("Medical record real-time update:", payload);
-    // Refresh data when changes are detected
     fetchMedicalRecords();
   });
 };
@@ -553,7 +549,7 @@ onMounted(async () => {
     setupRealtimeSubscription();
   } else {
     console.warn(
-      "User not authenticated as nurse, cannot load medical records"
+      "User not authenticated as nurse, cannot load medical records",
     );
   }
 });
@@ -789,7 +785,7 @@ onUnmounted(() => {
                   <span
                     class="badge"
                     :class="`bg-${getStatusBadgeVariant(
-                      record.Status || record.status
+                      record.Status || record.status,
                     )}`"
                   >
                     {{ record.Status || record.status }}
@@ -881,7 +877,7 @@ onUnmounted(() => {
                       <span
                         class="badge ms-2"
                         :class="`bg-${getStatusBadgeVariant(
-                          record.Status || record.status
+                          record.Status || record.status,
                         )}`"
                       >
                         {{ record.Status || record.status }}
@@ -889,7 +885,7 @@ onUnmounted(() => {
                       <span
                         class="badge ms-2"
                         :class="`bg-${getTypeBadgeVariant(
-                          record.Type || record.type
+                          record.Type || record.type,
                         )}`"
                       >
                         {{ record.Type || record.type }}
@@ -1469,7 +1465,7 @@ onUnmounted(() => {
                     <span
                       class="badge ms-2"
                       :class="`bg-${getTypeBadgeVariant(
-                        selectedRecord.Type || selectedRecord.type
+                        selectedRecord.Type || selectedRecord.type,
                       )}`"
                     >
                       {{ selectedRecord.Type || selectedRecord.type }}
@@ -1488,7 +1484,7 @@ onUnmounted(() => {
                     <span
                       class="badge ms-2"
                       :class="`bg-${getStatusBadgeVariant(
-                        selectedRecord.Status || selectedRecord.status
+                        selectedRecord.Status || selectedRecord.status,
                       )}`"
                     >
                       {{ selectedRecord.Status || selectedRecord.status }}
@@ -1675,7 +1671,9 @@ onUnmounted(() => {
 }
 
 .stats-card {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .stats-card:hover {
@@ -1719,7 +1717,9 @@ onUnmounted(() => {
 
 .recent-record-card {
   background-color: var(--light-color);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .recent-record-card:hover {

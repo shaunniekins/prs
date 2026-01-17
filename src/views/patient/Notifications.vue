@@ -67,9 +67,6 @@ const fetchNotifications = async () => {
     const result = await notificationOps.getMyNotifications();
     // The function returns data directly, not an object with success property
     notifications.value = result || [];
-    console.log(
-      `Successfully loaded ${notifications.value.length} notifications`
-    );
   } catch (err) {
     console.error("Error fetching notifications:", err);
     error.value =
@@ -84,7 +81,6 @@ const markAsRead = async (notification) => {
   try {
     await notificationOps.markAsRead(notification.NotificationID);
     notification.IsRead = true;
-    console.log("Notification marked as read:", notification.NotificationID);
   } catch (err) {
     console.error("Error marking notification as read:", err);
     error.value = err.message || "Failed to mark notification as read";
@@ -95,7 +91,6 @@ const markAllAsRead = async () => {
   try {
     await notificationOps.markAllAsRead();
     notifications.value.forEach((n) => (n.IsRead = true));
-    console.log("All notifications marked as read");
   } catch (err) {
     console.error("Error marking all notifications as read:", err);
     error.value = err.message || "Failed to mark all notifications as read";
@@ -106,11 +101,10 @@ const deleteNotification = async (notification) => {
   try {
     await notificationOps.deleteNotification(notification.NotificationID);
     const index = notifications.value.findIndex(
-      (n) => n.NotificationID === notification.NotificationID
+      (n) => n.NotificationID === notification.NotificationID,
     );
     if (index !== -1) {
       notifications.value.splice(index, 1);
-      console.log("Notification deleted:", notification.NotificationID);
     }
   } catch (err) {
     console.error("Error deleting notification:", err);
@@ -120,25 +114,16 @@ const deleteNotification = async (notification) => {
 
 const performAction = (notification) => {
   if (notification.RelatedAppointmentID) {
-    console.log("Viewing appointment:", notification.RelatedAppointmentID);
-    // In a real application, this would navigate to the appointment
     alert(
-      `View appointment ${notification.RelatedAppointmentID} would be implemented here`
+      `View appointment ${notification.RelatedAppointmentID} would be implemented here`,
     );
   } else if (notification.RelatedRecordID) {
-    console.log("Viewing medical record:", notification.RelatedRecordID);
-    // In a real application, this would navigate to the medical record
     alert(
-      `View medical record ${notification.RelatedRecordID} would be implemented here`
+      `View medical record ${notification.RelatedRecordID} would be implemented here`,
     );
   } else {
-    console.log(
-      "Performing general action for notification:",
-      notification.NotificationID
-    );
-    // In a real application, this would perform the appropriate action
     alert(
-      `Action "${notification.ActionText || "View"}" would be implemented here`
+      `Action "${notification.ActionText || "View"}" would be implemented here`,
     );
   }
 };
@@ -430,7 +415,7 @@ onMounted(async () => {
               <div class="notification-icon me-3">
                 <i
                   :class="`${getNotificationIcon(
-                    notification.Type
+                    notification.Type,
                   )} text-${getTypeBadgeVariant(notification.Type)} fs-4`"
                 ></i>
               </div>
@@ -446,7 +431,7 @@ onMounted(async () => {
                     <span
                       class="badge me-2"
                       :class="`bg-${getPriorityBadgeVariant(
-                        notification.Priority
+                        notification.Priority,
                       )}`"
                     >
                       {{ notification.Priority }}
@@ -454,7 +439,7 @@ onMounted(async () => {
                     <span
                       class="badge"
                       :class="`bg-${getStatusBadgeVariant(
-                        notification.IsRead
+                        notification.IsRead,
                       )}`"
                     >
                       {{ notification.IsRead ? "read" : "unread" }}
@@ -644,7 +629,9 @@ onMounted(async () => {
 }
 
 .stats-card {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .stats-card:hover {

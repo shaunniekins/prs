@@ -152,7 +152,7 @@ const fetchOverviewStats = async () => {
   try {
     const stats = await reportOps.getOverviewStats(
       dateRange.value.start,
-      dateRange.value.end
+      dateRange.value.end,
     );
     reportData.value.overview = {
       totalPatients: stats.totalPatients,
@@ -179,7 +179,7 @@ const fetchAppointmentAnalytics = async () => {
   try {
     const analytics = await reportOps.getAppointmentAnalytics(
       dateRange.value.start,
-      dateRange.value.end
+      dateRange.value.end,
     );
     reportData.value.appointments = analytics;
   } catch (err) {
@@ -202,7 +202,7 @@ const fetchPatientAnalytics = async () => {
   try {
     const analytics = await reportOps.getPatientAnalytics(
       dateRange.value.start,
-      dateRange.value.end
+      dateRange.value.end,
     );
     reportData.value.patients = analytics;
   } catch (err) {
@@ -235,7 +235,7 @@ const fetchStaffAnalytics = async () => {
   try {
     const analytics = await reportOps.getStaffAnalytics(
       dateRange.value.start,
-      dateRange.value.end
+      dateRange.value.end,
     );
     reportData.value.staff = analytics;
   } catch (err) {
@@ -257,7 +257,6 @@ const generateCustomReport = async () => {
   error.value = null;
   try {
     await fetchReportData();
-    console.log("Generated custom report for date range:", dateRange.value);
   } catch (err) {
     error.value = "Failed to generate custom report: " + err.message;
     console.error("Error generating custom report:", err);
@@ -315,7 +314,7 @@ const updateReport = async () => {
     };
 
     const index = reportsList.value.findIndex(
-      (r) => r.ReportID === editingReport.value.ReportID
+      (r) => r.ReportID === editingReport.value.ReportID,
     );
     if (index !== -1) {
       reportsList.value[index] = updatedReport;
@@ -338,7 +337,7 @@ const deleteReport = async (reportId) => {
   error.value = null;
   try {
     reportsList.value = reportsList.value.filter(
-      (r) => r.ReportID !== reportId
+      (r) => r.ReportID !== reportId,
     );
   } catch (err) {
     error.value = "Failed to delete report: " + err.message;
@@ -372,8 +371,6 @@ const resetReportForm = () => {
 };
 
 const exportReport = (format) => {
-  console.log(`Exporting report in ${format} format`);
-  // In a real application, this would generate and download the report
   let content = "";
   let filename = "";
   let mimeType = "";
@@ -417,7 +414,7 @@ const convertToCSV = (data) => {
             ? JSON.stringify(value)
             : String(value);
         })
-        .join(",")
+        .join(","),
     ),
   ].join("\n");
 
@@ -438,7 +435,7 @@ const getChartData = (data) => {
         item.group ||
         item.month ||
         item.name ||
-        item.day
+        item.day,
     ),
     datasets: [
       {
@@ -448,7 +445,7 @@ const getChartData = (data) => {
             item.appointments ||
             item.registrations ||
             item.patients ||
-            item.hours
+            item.hours,
         ),
         backgroundColor: data.map((item) => item.color),
         borderWidth: 2,
@@ -464,7 +461,7 @@ const getLineChartData = (data, label) => {
       {
         label: label,
         data: data.map(
-          (item) => item.appointments || item.registrations || item.hours
+          (item) => item.appointments || item.registrations || item.hours,
         ),
         borderColor: "#4361ee",
         backgroundColor: "rgba(67, 97, 238, 0.1)",
@@ -524,7 +521,7 @@ const getAppointmentTrendsData = () => {
       {
         label: "Appointments",
         data: reportData.value.appointments.trends.map(
-          (item) => item.appointments
+          (item) => item.appointments,
         ),
         borderColor: "#4361ee",
         backgroundColor: "rgba(67, 97, 238, 0.1)",
@@ -542,7 +539,7 @@ const getAppointmentStatusData = () => {
       {
         data: reportData.value.appointments.byStatus.map((item) => item.count),
         backgroundColor: reportData.value.appointments.byStatus.map(
-          (item) => item.color
+          (item) => item.color,
         ),
         borderWidth: 2,
       },
@@ -558,7 +555,7 @@ const getAppointmentTypesData = () => {
         label: "Appointments",
         data: reportData.value.appointments.byType.map((item) => item.count),
         backgroundColor: reportData.value.appointments.byType.map(
-          (item) => item.color
+          (item) => item.color,
         ),
         borderWidth: 2,
       },
@@ -573,7 +570,7 @@ const getPatientGenderData = () => {
       {
         data: reportData.value.patients.byGender.map((item) => item.count),
         backgroundColor: reportData.value.patients.byGender.map(
-          (item) => item.color
+          (item) => item.color,
         ),
         borderWidth: 2,
       },
@@ -584,14 +581,14 @@ const getPatientGenderData = () => {
 const getPatientAgeData = () => {
   return {
     labels: reportData.value.patients.byAgeGroup.map(
-      (item) => item.group + " years"
+      (item) => item.group + " years",
     ),
     datasets: [
       {
         label: "Patients",
         data: reportData.value.patients.byAgeGroup.map((item) => item.count),
         backgroundColor: reportData.value.patients.byAgeGroup.map(
-          (item) => item.color
+          (item) => item.color,
         ),
         borderWidth: 2,
       },
@@ -602,13 +599,13 @@ const getPatientAgeData = () => {
 const getRegistrationTrendsData = () => {
   return {
     labels: reportData.value.patients.registrationTrends.map(
-      (item) => item.month
+      (item) => item.month,
     ),
     datasets: [
       {
         label: "Registrations",
         data: reportData.value.patients.registrationTrends.map(
-          (item) => item.registrations
+          (item) => item.registrations,
         ),
         borderColor: "#4CAF50",
         backgroundColor: "rgba(76, 175, 80, 0.1)",
@@ -1228,7 +1225,9 @@ onMounted(async () => {
 
 <style scoped>
 .stats-card {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .stats-card:hover {

@@ -64,7 +64,7 @@ const filteredStaff = computed(() => {
     ];
 
     return searchableFields.some((field) =>
-      field?.toLowerCase().includes(searchTerm)
+      field?.toLowerCase().includes(searchTerm),
     );
   });
 });
@@ -77,7 +77,7 @@ const staffByRole = computed(() => {
 });
 
 const activeStaffCount = computed(
-  () => staffList.value.filter((staff) => staff.status === "Active").length
+  () => staffList.value.filter((staff) => staff.status === "Active").length,
 );
 
 const totalStaffCount = computed(() => staffList.value.length);
@@ -95,11 +95,8 @@ const fetchStaff = async () => {
   loading.value = true;
   try {
     // Fetch staff data from the service
-    console.log("📡 Fetching staff data...");
+
     const response = await staffService.getAllStaff();
-    console.log("📦 Staff response:", response);
-    console.log("📊 Staff data:", response.data);
-    console.log("📊 Staff data length:", response.data?.length || 0);
 
     // Format the data for display
     staffList.value = (response.data || []).map((staff) => ({
@@ -121,8 +118,6 @@ const fetchStaff = async () => {
         (staff.Role?.RoleName || staff.role)?.toLowerCase() === "admin" &&
         staff.Users?.Email === "admin@clinic.com",
     }));
-
-    console.log("✅ Processed staff list:", staffList.value.length, "records");
   } catch (error) {
     console.error("❌ Error loading staff:", error);
     errorMessage.value = "Failed to load staff data. Please try again.";
@@ -272,23 +267,13 @@ const openEditModal = (staff) => {
   };
   formErrors.value = {};
   showEditModal.value = true;
-
-  console.log(
-    "✏️ Opening edit modal for staff:",
-    staff.firstName,
-    staff.surname,
-    "Role:",
-    staff.role,
-    "->",
-    normalizeRole(staff.role)
-  );
 };
 
 const openDeleteModal = (staff) => {
   // Prevent deletion of system administrator account
   if (staff.isSystemAdmin) {
     alert(
-      "Cannot delete the system administrator account. This account is protected."
+      "Cannot delete the system administrator account. This account is protected.",
     );
     return;
   }
@@ -337,7 +322,7 @@ const addStaff = async () => {
     const generatedPassword = generateDefaultPassword(
       surname,
       firstName,
-      contactNumber
+      contactNumber,
     );
     const username = generateUsername(firstName, surname);
 
@@ -375,10 +360,8 @@ const addStaff = async () => {
 
     // Show success message with generated credentials
     alert(
-      `Staff member created successfully!\n\nUsername: ${username}\nDefault Password: ${generatedPassword}\n\nPlease share these credentials with the staff member securely.`
+      `Staff member created successfully!\n\nUsername: ${username}\nDefault Password: ${generatedPassword}\n\nPlease share these credentials with the staff member securely.`,
     );
-
-    console.log("✅ Staff added successfully:", response.data);
   } catch (error) {
     console.error("Error adding staff:", error);
     const errorMsg =
@@ -417,7 +400,7 @@ const updateStaff = async () => {
     // Update staff member using the service
     const response = await staffService.updateStaff(
       selectedStaff.value.id,
-      staffData
+      staffData,
     );
 
     if (response.error) {
@@ -427,8 +410,6 @@ const updateStaff = async () => {
     // Refresh the staff list
     await fetchStaff();
     closeModals();
-
-    console.log("✅ Staff updated successfully:", response.data);
   } catch (error) {
     console.error("Error updating staff:", error);
     errorMessage.value = "Failed to update staff member. Please try again.";
@@ -447,7 +428,7 @@ const deleteStaff = async () => {
   // Double-check system admin protection
   if (selectedStaff.value.isSystemAdmin) {
     alert(
-      "Cannot delete the system administrator account. This account is protected."
+      "Cannot delete the system administrator account. This account is protected.",
     );
     closeModals();
     return;
@@ -466,7 +447,6 @@ const deleteStaff = async () => {
     // Refresh the staff list
     await fetchStaff();
     closeModals();
-    console.log("✅ Staff deleted successfully");
   } catch (error) {
     console.error("Error deleting staff:", error);
     errorMessage.value = "Failed to delete staff member. Please try again.";
@@ -518,7 +498,6 @@ onUnmounted(() => {
 });
 
 const handleStaffUpdate = (payload) => {
-  console.log("Real-time staff update:", payload);
   const { eventType, new: newRecord, old: oldRecord } = payload;
 
   if (eventType === "INSERT") {

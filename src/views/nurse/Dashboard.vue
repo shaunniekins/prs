@@ -53,15 +53,15 @@ const fetchDashboardData = async () => {
 
     // Filter today's appointments
     const todayAppointments = appointmentsData.filter(
-      (apt) => new Date(apt.DateTime).toDateString() === today
+      (apt) => new Date(apt.DateTime).toDateString() === today,
     );
 
     // Count stats
     const pendingCount = appointmentsData.filter(
-      (apt) => apt.Status === "Pending"
+      (apt) => apt.Status === "Pending",
     ).length;
     const completedTodayCount = todayAppointments.filter(
-      (apt) => apt.Status === "Completed"
+      (apt) => apt.Status === "Completed",
     ).length;
 
     // Fetch patients count
@@ -207,10 +207,7 @@ const getAppointmentActionText = (status) => {
   return actionTexts[status] || "View";
 };
 
-const handleAppointmentAction = (appointment) => {
-  // Mock action - just log for now
-  console.log("Mock action for appointment:", appointment.AppointmentID);
-};
+const handleAppointmentAction = (appointment) => {};
 
 const getActivityIcon = (type) => {
   const icons = {
@@ -587,8 +584,8 @@ const getActivityColor = (type) => {
                   task.type === "appointments"
                     ? "Review"
                     : task.type === "records"
-                    ? "Update"
-                    : "View"
+                      ? "Update"
+                      : "View"
                 }}
               </router-link>
             </div>
@@ -624,7 +621,7 @@ const getActivityColor = (type) => {
             <div class="activity-icon me-3">
               <i
                 :class="`${getActivityIcon(
-                  activity.type
+                  activity.type,
                 )} text-${getActivityColor(activity.type)}`"
               ></i>
             </div>
@@ -653,7 +650,9 @@ const getActivityColor = (type) => {
 
 <style scoped>
 .stats-card {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .stats-card:hover {
@@ -672,7 +671,9 @@ const getActivityColor = (type) => {
 
 .schedule-item {
   background-color: var(--light-color);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .schedule-item:hover {
