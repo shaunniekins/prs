@@ -328,7 +328,7 @@ onUnmounted(() => {
         <div class="alert-icon me-3">
           <i class="bi bi-exclamation-triangle text-danger fs-4"></i>
         </div>
-        <div class="flex-grow-1">
+        <div class="grow">
           <h6 class="alert-heading mb-1">Error Loading Appointments</h6>
           <p class="mb-0">{{ error }}</p>
         </div>
@@ -403,7 +403,7 @@ onUnmounted(() => {
         <div class="alert-icon me-3">
           <i class="bi bi-shield-exclamation text-warning fs-4"></i>
         </div>
-        <div class="flex-grow-1">
+        <div class="grow">
           <h6 class="alert-heading mb-1">Access Restricted</h6>
           <p class="mb-0">
             You need nurse privileges to manage appointment requests.
@@ -421,7 +421,7 @@ onUnmounted(() => {
         <div class="alert-icon me-3">
           <i class="bi bi-exclamation-triangle text-warning fs-4"></i>
         </div>
-        <div class="flex-grow-1">
+        <div class="grow">
           <h6 class="alert-heading mb-1">
             Pending Appointments Require Action
           </h6>

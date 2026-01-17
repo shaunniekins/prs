@@ -507,7 +507,7 @@ onMounted(() => {
               class="recent-record-card p-3 border rounded animate-fade-in-up"
             >
               <div class="d-flex justify-content-between align-items-start">
-                <div class="flex-grow-1">
+                <div class="grow">
                   <div class="d-flex align-items-center mb-2">
                     <div class="record-icon me-3">
                       <i class="bi bi-file-medical text-primary"></i>

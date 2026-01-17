@@ -567,7 +567,7 @@ const getActivityColor = (type) => {
               <div class="task-icon me-3">
                 <i :class="task.icon"></i>
               </div>
-              <div class="flex-grow-1">
+              <div class="grow">
                 <div class="fw-medium">{{ task.title }}</div>
                 <small class="text-muted">{{ task.message }}</small>
               </div>
@@ -625,7 +625,7 @@ const getActivityColor = (type) => {
                 )} text-${getActivityColor(activity.type)}`"
               ></i>
             </div>
-            <div class="activity-content flex-grow-1">
+            <div class="activity-content grow">
               <div class="d-flex justify-content-between align-items-start">
                 <div>
                   <p class="mb-1">{{ activity.message }}</p>

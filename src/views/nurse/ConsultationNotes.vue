@@ -389,7 +389,7 @@ onMounted(async () => {
         <div class="alert-icon me-3">
           <i class="bi bi-exclamation-triangle text-warning fs-4"></i>
         </div>
-        <div class="flex-grow-1">
+        <div class="grow">
           <h6 class="alert-heading mb-1">Draft Notes Require Completion</h6>
           <p class="mb-0">
             You have {{ draftNotes.length }} draft note(s) that need to be
@@ -441,7 +441,7 @@ onMounted(async () => {
         <div class="alert-icon me-3">
           <i class="bi bi-exclamation-triangle text-danger fs-4"></i>
         </div>
-        <div class="flex-grow-1">
+        <div class="grow">
           <h6 class="alert-heading mb-1">Error Loading Notes</h6>
           <p class="mb-0">{{ error }}</p>
         </div>
@@ -630,7 +630,7 @@ onMounted(async () => {
           >
             <div class="recent-note-card p-3 border rounded animate-fade-in-up">
               <div class="d-flex justify-content-between align-items-start">
-                <div class="flex-grow-1">
+                <div class="grow">
                   <div class="d-flex align-items-center mb-2">
                     <div class="patient-avatar-small me-3">
                       <i class="bi bi-person-circle"></i>

@@ -233,7 +233,7 @@ onMounted(async () => {
             <div class="alert-icon me-3">
               <i class="bi bi-exclamation-triangle text-danger fs-4"></i>
             </div>
-            <div class="flex-grow-1">
+            <div class="grow">
               <h6 class="alert-heading mb-1">Error Loading Notifications</h6>
               <p class="mb-0">{{ error }}</p>
             </div>
@@ -300,7 +300,7 @@ onMounted(async () => {
         <div class="alert-icon me-3">
           <i class="bi bi-exclamation-triangle text-danger fs-4"></i>
         </div>
-        <div class="flex-grow-1">
+        <div class="grow">
           <h6 class="alert-heading mb-1">
             High Priority Notifications Require Attention
           </h6>
@@ -325,7 +325,7 @@ onMounted(async () => {
         <div class="alert-icon me-3">
           <i class="bi bi-check-circle text-info fs-4"></i>
         </div>
-        <div class="flex-grow-1">
+        <div class="grow">
           <h6 class="alert-heading mb-1">Action Required</h6>
           <p class="mb-0">
             You have {{ actionRequiredCount }} notification(s) that require your
@@ -420,7 +420,7 @@ onMounted(async () => {
                 ></i>
               </div>
 
-              <div class="notification-content flex-grow-1">
+              <div class="notification-content grow">
                 <div
                   class="d-flex justify-content-between align-items-start mb-2"
                 >
@@ -522,7 +522,7 @@ onMounted(async () => {
               <div class="reminder-icon me-3">
                 <i class="bi bi-calendar-event text-primary"></i>
               </div>
-              <div class="flex-grow-1">
+              <div class="grow">
                 <div class="fw-medium">Tomorrow 10:30 AM</div>
                 <small class="text-muted"
                   >Regular check-up with Dr. Sarah Johnson</small
@@ -537,7 +537,7 @@ onMounted(async () => {
               <div class="reminder-icon me-3">
                 <i class="bi bi-calendar-event text-info"></i>
               </div>
-              <div class="flex-grow-1">
+              <div class="grow">
                 <div class="fw-medium">October 18, 2:00 PM</div>
                 <small class="text-muted">Follow-up consultation</small>
               </div>
@@ -563,7 +563,7 @@ onMounted(async () => {
               <div class="health-icon me-3">
                 <i class="bi bi-capsule text-warning"></i>
               </div>
-              <div class="flex-grow-1">
+              <div class="grow">
                 <div class="fw-medium">Medication Reminder</div>
                 <small class="text-muted"
                   >Take Lisinopril at 8:00 AM daily</small
@@ -575,7 +575,7 @@ onMounted(async () => {
               <div class="health-icon me-3">
                 <i class="bi bi-thermometer text-info"></i>
               </div>
-              <div class="flex-grow-1">
+              <div class="grow">
                 <div class="fw-medium">Blood Pressure Monitoring</div>
                 <small class="text-muted"
                   >Check BP twice daily and record readings</small
@@ -587,7 +587,7 @@ onMounted(async () => {
               <div class="health-icon me-3">
                 <i class="bi bi-shield-check text-success"></i>
               </div>
-              <div class="flex-grow-1">
+              <div class="grow">
                 <div class="fw-medium">Vaccination Due</div>
                 <small class="text-muted">Annual flu vaccination is due</small>
               </div>

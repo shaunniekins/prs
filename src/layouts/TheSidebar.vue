@@ -295,7 +295,7 @@ const closeSidebar = () => {
         </template>
 
         <!-- Spacer to push profile to bottom (if needed) -->
-        <li class="flex-grow-1"></li>
+        <li class="grow"></li>
       </ul>
 
       <!-- Bottom user profile and logout section -->
@@ -556,7 +556,8 @@ const closeSidebar = () => {
 
 .logout-btn:focus {
   outline: none !important;
-  box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.25),
+  box-shadow:
+    0 0 0 3px rgba(220, 53, 69, 0.25),
     0 4px 8px rgba(220, 53, 69, 0.3) !important;
   color: #ffffff !important;
 }

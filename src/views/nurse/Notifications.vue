@@ -303,7 +303,7 @@ const viewAppointment = (appointmentId) => {
                 ></i>
               </div>
 
-              <div class="notification-content flex-grow-1">
+              <div class="notification-content grow">
                 <div
                   class="d-flex justify-content-between align-items-start mb-2"
                 >

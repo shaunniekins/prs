@@ -771,7 +771,7 @@ onMounted(async () => {
               class="recent-record-card p-3 border rounded animate-fade-in-up"
             >
               <div class="d-flex justify-content-between align-items-start">
-                <div class="flex-grow-1">
+                <div class="grow">
                   <div class="d-flex align-items-center mb-2">
                     <div class="patient-avatar-small me-3">
                       <i class="bi bi-person-circle"></i>

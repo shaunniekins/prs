@@ -186,7 +186,7 @@ onUnmounted(() => {
         <div class="alert-icon me-3">
           <i class="bi bi-info-circle text-primary fs-4"></i>
         </div>
-        <div class="flex-grow-1">
+        <div class="grow">
           <h6 class="alert-heading mb-1">
             Welcome to Baan KM-3 Health Center Information System
           </h6>
@@ -330,7 +330,7 @@ onUnmounted(() => {
                     <div class="appointment-icon me-3">
                       <i class="bi bi-calendar-check text-primary"></i>
                     </div>
-                    <div class="flex-grow-1">
+                    <div class="grow">
                       <div
                         class="d-flex justify-content-between align-items-start"
                       >

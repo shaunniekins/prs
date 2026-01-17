@@ -198,7 +198,7 @@ const updateNotification = async () => {
 
     await notificationOps.updateNotification(
       selectedNotification.value.id,
-      notificationData
+      notificationData,
     );
     await loadNotifications();
     closeModals();
@@ -441,12 +441,12 @@ const getNotificationIcon = (type) => {
               <div class="notification-icon me-3">
                 <i
                   :class="`${getNotificationIcon(
-                    notification.type
+                    notification.type,
                   )} text-${getTypeBadgeVariant(notification.type)} fs-4`"
                 ></i>
               </div>
 
-              <div class="notification-content flex-grow-1">
+              <div class="notification-content grow">
                 <div
                   class="d-flex justify-content-between align-items-start mb-2"
                 >
@@ -460,7 +460,7 @@ const getNotificationIcon = (type) => {
                     <span
                       class="badge me-2"
                       :class="`bg-${getStatusBadgeVariant(
-                        notification.status
+                        notification.status,
                       )}`"
                     >
                       {{ notification.status }}
@@ -468,7 +468,7 @@ const getNotificationIcon = (type) => {
                     <span
                       class="badge"
                       :class="`bg-${getPriorityBadgeVariant(
-                        notification.priority
+                        notification.priority,
                       )}`"
                     >
                       {{ notification.priority }}
@@ -862,7 +862,9 @@ const getNotificationIcon = (type) => {
 }
 
 .stats-card {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .stats-card:hover {

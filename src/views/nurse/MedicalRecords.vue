@@ -636,7 +636,7 @@ onUnmounted(() => {
         <div class="alert-icon me-3">
           <i class="bi bi-exclamation-triangle text-warning fs-4"></i>
         </div>
-        <div class="flex-grow-1">
+        <div class="grow">
           <h6 class="alert-heading mb-1">Draft Records Require Attention</h6>
           <p class="mb-0">
             You have {{ draftRecords.length }} draft record(s) that need to be
@@ -867,7 +867,7 @@ onUnmounted(() => {
               class="recent-record-card p-3 border rounded animate-fade-in-up"
             >
               <div class="d-flex justify-content-between align-items-start">
-                <div class="flex-grow-1">
+                <div class="grow">
                   <div class="d-flex align-items-center mb-2">
                     <div class="patient-avatar-small me-3">
                       <i class="bi bi-person-circle"></i>
