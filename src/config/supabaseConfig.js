@@ -28,18 +28,18 @@ export const validateSupabaseConfig = () => {
     !supabaseUrl.includes("localhost")
   ) {
     console.warn(
-      "⚠️ Supabase URL doesn't appear to be a standard Supabase URL"
+      "⚠️ Supabase URL doesn't appear to be a standard Supabase URL",
     );
   }
 
   // Validate publishable key
   if (!supabaseKey) {
     errors.push(
-      "VITE_SUPABASE_PUBLISHABLE_KEY environment variable is not set"
+      "VITE_SUPABASE_PUBLISHABLE_KEY environment variable is not set",
     );
   } else if (!supabaseKey.startsWith("sb_publishable_")) {
     errors.push(
-      "Invalid publishable key format. Should start with 'sb_publishable_'"
+      "Invalid publishable key format. Should start with 'sb_publishable_'",
     );
   }
 
@@ -49,8 +49,6 @@ export const validateSupabaseConfig = () => {
     throw new Error(errorMessage);
   }
 
-  console.log("✅ Supabase configuration validated");
-  console.log("🔑 Using publishable key format");
   return true;
 };
 

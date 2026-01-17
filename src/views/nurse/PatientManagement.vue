@@ -145,45 +145,127 @@ const closeModals = () => {
   resetVitalsForm();
 };
 
-const addPatient = () => {
-  // Generate new patient ID
-  const newId = Math.max(...patientsList.value.map((p) => p.PatientID)) + 1;
+const addPatient = async () => {
+  isLoading.value = true;
+  errorMessage.value = null;
 
-  // Create new patient object
-  const newPatient = {
-    ...patientForm.value,
-    PatientID: newId,
-    registrationDate: new Date().toISOString().split("T")[0],
-    lastVisit: "Never",
-    status: "Active",
-    riskLevel: "Low",
-  };
+  try {
+    // Prepare patient data for Supabase (use database column names)
+    const patientData = {
+      FirstName: patientForm.value.firstName,
+      Surname: patientForm.value.surname,
+      Suffix: patientForm.value.suffix || null,
+      BirthDate: patientForm.value.birthDate,
+      Gender: patientForm.value.gender,
+      ContactNumber: patientForm.value.contactNumber,
+      Address: patientForm.value.address,
+      BloodType: patientForm.value.bloodType || null,
+      EmergencyContact: patientForm.value.emergencyContact || null,
+      Allergies: patientForm.value.allergies || null,
+      IsActive: true,
+    };
 
-  // Add to patients list
-  patientsList.value.push(newPatient);
-  closeModals();
+    // Create patient in database
+    const newPatient = await patients.createPatient(patientData);
+
+    if (newPatient) {
+      // Add to local list with formatted data
+      const formattedPatient = {
+        PatientID: newPatient.PatientID,
+        firstName: newPatient.FirstName,
+        surname: newPatient.Surname,
+        suffix: newPatient.Suffix || "",
+        birthDate: newPatient.BirthDate,
+        gender: newPatient.Gender,
+        contactNumber: newPatient.ContactNumber || "",
+        email: "",
+        address: newPatient.Address || "",
+        bloodType: newPatient.BloodType || "",
+        emergencyContact: newPatient.EmergencyContact || "",
+        allergies: newPatient.Allergies || "",
+        status: newPatient.IsActive ? "Active" : "Inactive",
+        registrationDate: newPatient.created_at
+          ? new Date(newPatient.created_at).toLocaleDateString()
+          : new Date().toLocaleDateString(),
+        lastVisit: "Never",
+        riskLevel: "Low",
+      };
+
+      patientsList.value.unshift(formattedPatient);
+      closeModals();
+
+      alert("Patient registered successfully!");
+    }
+  } catch (err) {
+    console.error("Error adding patient:", err);
+    errorMessage.value = "Failed to register patient. Please try again.";
+    alert("Failed to register patient: " + (err.message || "Unknown error"));
+  } finally {
+    isLoading.value = false;
+  }
 };
 
-const updatePatient = () => {
-  if (!selectedPatient.value) {
+const updatePatient = async () => {
+  if (!selectedPatient.value?.PatientID) {
+    errorMessage.value = "No patient selected for update";
     return;
   }
 
-  // Find patient index
-  const index = patientsList.value.findIndex(
-    (p) => p.PatientID === selectedPatient.value.PatientID,
-  );
-  if (index !== -1) {
-    // Update patient data
-    patientsList.value[index] = {
-      ...patientsList.value[index],
-      ...patientForm.value,
+  isLoading.value = true;
+  errorMessage.value = null;
+
+  try {
+    // Prepare patient data for Supabase (use database column names)
+    const patientData = {
+      FirstName: patientForm.value.firstName,
+      Surname: patientForm.value.surname,
+      Suffix: patientForm.value.suffix || null,
+      BirthDate: patientForm.value.birthDate,
+      Gender: patientForm.value.gender,
+      ContactNumber: patientForm.value.contactNumber,
+      Address: patientForm.value.address,
+      BloodType: patientForm.value.bloodType || null,
+      EmergencyContact: patientForm.value.emergencyContact || null,
+      Allergies: patientForm.value.allergies || null,
     };
+
+    // Update patient in database
+    const updatedPatient = await patients.updatePatient(
+      selectedPatient.value.PatientID,
+      patientData,
+    );
+
+    // Update in local list
+    const index = patientsList.value.findIndex(
+      (p) => p.PatientID === selectedPatient.value.PatientID,
+    );
+    if (index !== -1) {
+      patientsList.value[index] = {
+        ...patientsList.value[index],
+        firstName: updatedPatient.FirstName,
+        surname: updatedPatient.Surname,
+        suffix: updatedPatient.Suffix || "",
+        birthDate: updatedPatient.BirthDate,
+        gender: updatedPatient.Gender,
+        contactNumber: updatedPatient.ContactNumber || "",
+        address: updatedPatient.Address || "",
+        bloodType: updatedPatient.BloodType || "",
+        emergencyContact: updatedPatient.EmergencyContact || "",
+        allergies: updatedPatient.Allergies || "",
+      };
+    }
+
     closeModals();
+  } catch (err) {
+    console.error("Error updating patient:", err);
+    errorMessage.value = "Failed to update patient. Please try again.";
+    alert("Failed to update patient: " + (err.message || "Unknown error"));
+  } finally {
+    isLoading.value = false;
   }
 };
 
-const deletePatient = (patient) => {
+const deletePatient = async (patient) => {
   if (
     !confirm(
       `Are you sure you want to delete patient ${patient.firstName} ${patient.surname}?`,
@@ -192,12 +274,23 @@ const deletePatient = (patient) => {
     return;
   }
 
-  // Remove patient from list
-  const index = patientsList.value.findIndex(
-    (p) => p.PatientID === patient.PatientID,
-  );
-  if (index !== -1) {
-    patientsList.value.splice(index, 1);
+  isLoading.value = true;
+  errorMessage.value = null;
+
+  try {
+    // Delete from database
+    await patients.deletePatient(patient.PatientID);
+
+    // Remove from local list
+    patientsList.value = patientsList.value.filter(
+      (p) => p.PatientID !== patient.PatientID,
+    );
+  } catch (err) {
+    console.error("Error deleting patient:", err);
+    errorMessage.value = "Failed to delete patient. Please try again.";
+    alert("Failed to delete patient: " + (err.message || "Unknown error"));
+  } finally {
+    isLoading.value = false;
   }
 };
 

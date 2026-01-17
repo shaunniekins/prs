@@ -72,14 +72,19 @@ router.post("/", async (req, res) => {
     }
 
     // 2. Register user in Supabase Auth
+    // IMPORTANT: The database trigger 'handle_new_user_in_public_users' expects
+    // specific metadata fields: 'username', 'fullName', and 'role'
+    const fullName = `${firstName} ${lastName}`;
     const { data: authData, error: authError } = await userService.signUpUser(
       email,
       password,
       {
-        firstName,
-        lastName,
-        role,
-      }
+        username, // Required by database trigger
+        fullName, // Required by database trigger
+        role: role.toLowerCase(), // Required by database trigger (lowercase for consistency)
+        firstName, // Additional data for reference
+        lastName, // Additional data for reference
+      },
     );
 
     if (authError) {
@@ -89,61 +94,65 @@ router.post("/", async (req, res) => {
 
     const userId = authData.user.id;
 
-    // 3. Save account information to public.Users table
-    const { data: userProfile, error: userProfileError } =
-      await userService.createUserProfile({
-        UserID: userId,
-        Username: username,
-        Email: email,
-        RoleName: role.toLowerCase(),
-        fullName: `${firstName} ${lastName}`,
-        // Add other user-related fields as needed
-      });
+    // Note: The database trigger 'handle_new_user_in_public_users' automatically
+    // creates the Users table entry, so we skip manual user profile creation.
 
-    if (userProfileError) {
-      console.error("Supabase User Profile Error:", userProfileError);
-      // Attempt to rollback Supabase Auth user creation if user profile creation fails
-      await userService.deleteUser(userId); // This might require service role key
-      return res.status(500).json({ message: userProfileError.message });
-    }
+    // 3. Save account information to public.Patients or public.Staff table
+    const roleLower = role.toLowerCase();
 
-    // 4. Save account information to public.Patients or public.Staff table
-    if (role === "Patient") {
+    if (roleLower === "patient") {
       const { data: patientData, error: patientError } =
         await userService.createPatientProfile({
           UserID: userId,
           FirstName: firstName,
           Surname: lastName,
+          Suffix: suffix || null,
           BirthDate: birthdate,
           Gender: gender,
           ContactNumber: contactNumber,
           Address: address,
           EmergencyContact: emergencyContactNumber,
+          IsActive: true,
         });
 
       if (patientError) {
         console.error("Supabase Patient Profile Error:", patientError);
+        // Rollback: delete the auth user (this will cascade delete Users entry)
         await userService.deleteUser(userId);
-        await userService.deleteUserProfile(userId);
         return res.status(500).json({ message: patientError.message });
       }
-    } else if (["Staff", "Nurse", "Admin"].includes(role)) {
+    } else if (["nurse", "admin"].includes(roleLower)) {
+      // Get RoleID for the staff role
+      const { data: roleData, error: roleError } = await supabase
+        .from("Role")
+        .select("RoleID")
+        .eq("RoleName", roleLower)
+        .single();
+
+      if (roleError) {
+        console.error("Error fetching RoleID:", roleError);
+        // Rollback: delete the auth user
+        await userService.deleteUser(userId);
+        return res
+          .status(500)
+          .json({ message: "Failed to find role: " + roleLower });
+      }
+
       const { data: staffData, error: staffError } =
         await userService.createStaffProfile({
           UserID: userId,
+          RoleID: roleData?.RoleID,
           FirstName: firstName,
           Surname: lastName,
+          Suffix: suffix || null,
           ContactNumber: contactNumber,
-          Address: address,
-          Gender: gender,
-          EmergencyContact: emergencyContactNumber,
-          // Note: Department and Specialty fields not in schema
+          IsActive: true,
         });
 
       if (staffError) {
         console.error("Supabase Staff Profile Error:", staffError);
+        // Rollback: delete the auth user (this will cascade delete Users entry)
         await userService.deleteUser(userId);
-        await userService.deleteUserProfile(userId);
         return res.status(500).json({ message: staffError.message });
       }
     }

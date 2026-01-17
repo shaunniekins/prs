@@ -18,14 +18,14 @@ const validateSupabaseConfig = () => {
 
   if (!supabasePublishableKey) {
     console.error(
-      "❌ VITE_SUPABASE_PUBLISHABLE_KEY environment variable is not set"
+      "❌ VITE_SUPABASE_PUBLISHABLE_KEY environment variable is not set",
     );
     throw new Error("Supabase publishable key not configured");
   }
 
   if (!supabasePublishableKey.startsWith("sb_publishable_")) {
     console.error(
-      "❌ Invalid VITE_SUPABASE_PUBLISHABLE_KEY format. Should start with 'sb_publishable_'"
+      "❌ Invalid VITE_SUPABASE_PUBLISHABLE_KEY format. Should start with 'sb_publishable_'",
     );
     throw new Error("Invalid publishable key format");
   }
@@ -37,7 +37,7 @@ const validateSupabaseConfig = () => {
 
   if (!supabaseSecretKey.startsWith("sb_secret_")) {
     console.error(
-      "❌ Invalid SUPABASE_SECRET_KEY format. Should start with 'sb_secret_'"
+      "❌ Invalid SUPABASE_SECRET_KEY format. Should start with 'sb_secret_'",
     );
     throw new Error("Invalid secret key format");
   }
@@ -95,7 +95,7 @@ export const patientService = {
         `
         *,
         Users!inner(fullName, Email)
-      `
+      `,
       )
       .eq("PatientID", id)
       .single();
@@ -172,7 +172,7 @@ export const appointmentService = {
           *,
           Users!inner(fullName)
         )
-      `
+      `,
       )
       .order("DateTime", { ascending: true });
 
@@ -194,7 +194,7 @@ export const appointmentService = {
           *,
           Users!inner(fullName)
         )
-      `
+      `,
       )
       .eq("AppointmentID", id)
       .single();
@@ -214,7 +214,7 @@ export const appointmentService = {
           *,
           Users!inner(fullName)
         )
-      `
+      `,
       )
       .eq("Patients.UserID", userId)
       .order("DateTime", { ascending: true });
@@ -234,7 +234,7 @@ export const appointmentService = {
           Users!inner(fullName)
         ),
         Staff!inner(*)
-      `
+      `,
       )
       .eq("Staff.UserID", userId)
       .order("DateTime", { ascending: true });
@@ -293,7 +293,7 @@ export const appointmentService = {
           *,
           Users!inner(fullName)
         )
-      `
+      `,
       )
       .eq("PatientID", patientId)
       .order("DateTime", { ascending: true });
@@ -312,7 +312,7 @@ export const appointmentService = {
           *,
           Users!inner(fullName)
         )
-      `
+      `,
       )
       .eq("ScheduledBy", staffId)
       .order("DateTime", { ascending: true });
@@ -334,7 +334,7 @@ export const staffService = {
         *,
         Users(fullName, Email),
         Role(RoleName)
-      `
+      `,
       )
       .order("created_at", { ascending: false });
 
@@ -347,7 +347,7 @@ export const staffService = {
     // Using supabaseAdmin to bypass RLS since server doesn't have user session context
     // Using left join (no !inner) so staff are returned even without Users record
     console.log(
-      "📡 [staffService.getAllStaffWithAuthInfo] Querying Staff table..."
+      "📡 [staffService.getAllStaffWithAuthInfo] Querying Staff table...",
     );
     const { data: staffData, error: staffError } = await supabaseAdmin
       .from("Staff")
@@ -356,24 +356,24 @@ export const staffService = {
         *,
         Users(fullName, Email, UserID),
         Role(RoleName)
-      `
+      `,
       )
       .order("created_at", { ascending: false });
 
     console.log(
       "📊 [staffService.getAllStaffWithAuthInfo] Staff query result:",
       staffData?.length || 0,
-      "records"
+      "records",
     );
     console.log(
       "📊 [staffService.getAllStaffWithAuthInfo] Staff query error:",
-      staffError
+      staffError,
     );
 
     if (staffError) {
       console.error(
         "❌ [staffService.getAllStaffWithAuthInfo] Query error:",
-        staffError
+        staffError,
       );
       return { data: null, error: staffError };
     }
@@ -426,7 +426,7 @@ export const staffService = {
         *,
         Users!inner(fullName, Email),
         Role(RoleName)
-      `
+      `,
       )
       .eq("StaffID", id)
       .single();
@@ -491,7 +491,7 @@ export const medicalRecordService = {
         ),
         Diagnosis(*),
         Treatment(*)
-      `
+      `,
       )
       .order("created_at", { ascending: false });
 
@@ -515,7 +515,7 @@ export const medicalRecordService = {
         ),
         Diagnosis(*),
         Treatment(*)
-      `
+      `,
       )
       .eq("MedicalRecordID", id)
       .single();
@@ -574,7 +574,7 @@ export const notificationService = {
         `
         *,
         Users!inner(fullName)
-      `
+      `,
       )
       .order("CreatedAt", { ascending: false });
 
@@ -920,7 +920,7 @@ export const userService = {
         `
         *,
         Role(RoleName)
-      `
+      `,
       )
       .eq("UserID", userId)
       .single();
@@ -972,7 +972,7 @@ export const userService = {
         `
         *,
         Role(RoleName)
-      `
+      `,
       )
       .order("created_at", { ascending: false });
 
@@ -1012,14 +1012,15 @@ export const userService = {
     return { data, error };
   },
 
-  // Sign up user in Supabase Auth
+  // Sign up user in Supabase Auth (uses admin client for server-side creation)
   async signUpUser(email, password, userData) {
-    const { data, error } = await supabaseAuth.auth.signUp({
+    // Use admin API for server-side user creation
+    // This auto-confirms the email and works properly from the server
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      options: {
-        data: userData, // User metadata goes inside options.data
-      },
+      email_confirm: true, // Auto-confirm the email
+      user_metadata: userData,
     });
     return { data, error };
   },
@@ -1082,15 +1083,16 @@ export const userService = {
 
   // Delete user
   async deleteUser(userId) {
-    // Delete from Supabase Auth
-    const { error: authError } = await supabase.auth.admin.deleteUser(userId);
+    // Delete from Supabase Auth (uses admin client)
+    const { error: authError } =
+      await supabaseAdmin.auth.admin.deleteUser(userId);
     if (authError) {
       console.error("Error deleting user from Supabase Auth:", authError);
       return { error: authError };
     }
 
-    // Delete from Users table
-    const { error: dbError } = await supabase
+    // Delete from Users table (uses admin client to bypass RLS)
+    const { error: dbError } = await supabaseAdmin
       .from("Users")
       .delete()
       .eq("UserID", userId);

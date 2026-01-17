@@ -132,50 +132,53 @@ const addPatient = async () => {
   error.value = null;
 
   try {
-    // Prepare patient data
+    // Prepare patient data (use database column names - PascalCase)
     const patientData = {
-      firstName: patientForm.value.firstName,
-      surname: patientForm.value.surname,
-      suffix: patientForm.value.suffix || null,
-      address: patientForm.value.address,
-      gender: patientForm.value.gender,
-      birthDate: patientForm.value.birthDate,
-      contactNumber: patientForm.value.contactNumber,
-      email: patientForm.value.email || null,
-      bloodType: patientForm.value.bloodType || null,
-      emergencyContact: patientForm.value.emergencyContact || null,
+      FirstName: patientForm.value.firstName,
+      Surname: patientForm.value.surname,
+      Suffix: patientForm.value.suffix || null,
+      Address: patientForm.value.address,
+      Gender: patientForm.value.gender,
+      BirthDate: patientForm.value.birthDate,
+      ContactNumber: patientForm.value.contactNumber,
+      BloodType: patientForm.value.bloodType || null,
+      EmergencyContact: patientForm.value.emergencyContact || null,
+      IsActive: true,
     };
 
     // Create patient via Supabase
     const newPatient = await patientOps.createPatient(patientData);
 
-    // Add to list with formatted data
-    const formattedPatient = {
-      PatientID: newPatient.PatientID,
-      firstName: newPatient.firstName,
-      surname: newPatient.surname,
-      suffix: newPatient.suffix,
-      address: newPatient.address,
-      gender: newPatient.gender,
-      birthDate: newPatient.birthDate,
-      contactNumber: newPatient.contactNumber,
-      email: newPatient.email,
-      bloodType: newPatient.bloodType,
-      emergencyContact: newPatient.emergencyContact,
-      registrationDate: newPatient.created_at
-        ? new Date(newPatient.created_at).toISOString().split("T")[0]
-        : null,
-      lastVisit: newPatient.lastVisit,
-      status: newPatient.status || "Active",
-      Users: newPatient.Users, // Keep the joined user data
-    };
+    if (newPatient) {
+      // Add to list with formatted data for display
+      const formattedPatient = {
+        PatientID: newPatient.PatientID,
+        firstName: newPatient.FirstName,
+        surname: newPatient.Surname,
+        suffix: newPatient.Suffix || "",
+        address: newPatient.Address,
+        gender: newPatient.Gender,
+        birthDate: newPatient.BirthDate,
+        contactNumber: newPatient.ContactNumber,
+        email: patientForm.value.email || "",
+        bloodType: newPatient.BloodType,
+        emergencyContact: newPatient.EmergencyContact,
+        registrationDate: newPatient.created_at
+          ? new Date(newPatient.created_at).toISOString().split("T")[0]
+          : new Date().toISOString().split("T")[0],
+        lastVisit: null,
+        status: newPatient.IsActive ? "Active" : "Inactive",
+      };
 
-    patientsList.value.unshift(formattedPatient);
+      patientsList.value.unshift(formattedPatient);
+      closeModals();
 
-    closeModals();
+      alert("Patient registered successfully!");
+    }
   } catch (err) {
     console.error("Error adding patient:", err);
-    error.value = "Failed to add patient";
+    error.value = "Failed to add patient: " + (err.message || "Unknown error");
+    alert("Failed to add patient: " + (err.message || "Unknown error"));
   } finally {
     loading.value = false;
   }
@@ -191,18 +194,17 @@ const updatePatient = async () => {
   error.value = null;
 
   try {
-    // Prepare patient data
+    // Prepare patient data (use database column names - PascalCase)
     const patientData = {
-      firstName: patientForm.value.firstName,
-      surname: patientForm.value.surname,
-      suffix: patientForm.value.suffix || null,
-      address: patientForm.value.address,
-      gender: patientForm.value.gender,
-      birthDate: patientForm.value.birthDate,
-      contactNumber: patientForm.value.contactNumber,
-      email: patientForm.value.email || null,
-      bloodType: patientForm.value.bloodType || null,
-      emergencyContact: patientForm.value.emergencyContact || null,
+      FirstName: patientForm.value.firstName,
+      Surname: patientForm.value.surname,
+      Suffix: patientForm.value.suffix || null,
+      Address: patientForm.value.address,
+      Gender: patientForm.value.gender,
+      BirthDate: patientForm.value.birthDate,
+      ContactNumber: patientForm.value.contactNumber,
+      BloodType: patientForm.value.bloodType || null,
+      EmergencyContact: patientForm.value.emergencyContact || null,
     };
 
     // Update patient via Supabase
@@ -211,22 +213,31 @@ const updatePatient = async () => {
       patientData,
     );
 
-    // Update in list
+    // Update in list with formatted data for display
     const index = patientsList.value.findIndex(
       (p) => p.PatientID === selectedPatient.value.PatientID,
     );
     if (index !== -1) {
       patientsList.value[index] = {
         ...patientsList.value[index],
-        ...updatedPatient,
-        Users: patientsList.value[index].Users, // Keep the joined user data
+        firstName: updatedPatient.FirstName,
+        surname: updatedPatient.Surname,
+        suffix: updatedPatient.Suffix || "",
+        address: updatedPatient.Address,
+        gender: updatedPatient.Gender,
+        birthDate: updatedPatient.BirthDate,
+        contactNumber: updatedPatient.ContactNumber,
+        bloodType: updatedPatient.BloodType,
+        emergencyContact: updatedPatient.EmergencyContact,
       };
     }
 
     closeModals();
   } catch (err) {
     console.error("Error updating patient:", err);
-    error.value = "Failed to update patient";
+    error.value =
+      "Failed to update patient: " + (err.message || "Unknown error");
+    alert("Failed to update patient: " + (err.message || "Unknown error"));
   } finally {
     loading.value = false;
   }
