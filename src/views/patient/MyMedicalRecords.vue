@@ -6,7 +6,8 @@ import { useAuthStore } from "../../stores/auth.js";
 // Initialize composables
 const { medicalRecords: medicalRecordOps, patients: patientOps } =
   useSupabase();
-const { user, isAuthenticated } = useAuthStore();
+const authStore = useAuthStore();
+const { user, isAuthenticated } = authStore;
 
 // Reactive data
 const loading = ref(false);
@@ -62,50 +63,66 @@ const recentRecords = computed(() => {
 
 // Methods
 const fetchMedicalRecords = async () => {
-  if (!isAuthenticated.value || !user.value) {
-    error.value = "Please log in to view your medical records.";
-    return;
-  }
-
   loading.value = true;
   error.value = null;
 
   try {
-    console.log("Fetching medical records for patient:", user.value.id);
-
-    const result = await medicalRecordOps.fetchByPatientId(user.value.id);
-
-    if (result.success) {
-      medicalRecords.value = result.data.map((record) => ({
-        id: record.MedicalRecordID,
-        patientId: record.PatientID,
-        patientName: user.value.fullName || "Patient",
-        appointmentId: record.AppointmentID,
-        date: record.RecordDate || record.created_at,
-        type: record.RecordType || "Consultation",
-        diagnosis:
-          record.Diagnosis?.DiagnosisName ||
-          record.DiagnosisName ||
-          "Not specified",
-        treatment:
-          record.Treatment?.TreatmentName ||
-          record.TreatmentName ||
-          "Not specified",
-        vitalSigns: record.VitalSigns || {},
-        notes: record.Notes || "",
-        assessment: record.Assessment || "",
-        plan: record.Plan || "",
-        status: record.Status || "Final",
-        createdAt: record.created_at,
-        updatedAt: record.updated_at,
-      }));
-
-      console.log(
-        `Successfully loaded ${medicalRecords.value.length} medical records`
-      );
-    } else {
-      throw new Error(result.error || "Failed to fetch medical records");
+    // Ensure auth is initialized before fetching data
+    if (!authStore.isInitialized) {
+      await authStore.initializeAuth();
     }
+
+    // Check if user is authenticated
+    if (!authStore.isAuthenticated || !authStore.user) {
+      error.value = "Please log in to view your medical records.";
+      return;
+    }
+
+    console.log("Fetching patient profile first...");
+
+    // First get the patient profile to get PatientID
+    const patientData = await patientOps.getMyPatients();
+    if (!patientData || patientData.length === 0) {
+      console.log("No patient profile found");
+      medicalRecords.value = [];
+      return;
+    }
+
+    patientProfile.value = patientData[0];
+    console.log("Patient profile loaded:", patientProfile.value.PatientID);
+
+    // Fetch medical records using PatientID
+    const records = await medicalRecordOps.getMedicalRecordsByPatient(
+      patientProfile.value.PatientID
+    );
+
+    medicalRecords.value = (records || []).map((record) => ({
+      id: record.MedicalRecordID,
+      patientId: record.PatientID,
+      patientName: authStore.user?.fullName || "Patient",
+      appointmentId: record.AppointmentID,
+      date: record.RecordDate || record.created_at,
+      type: record.RecordType || "Consultation",
+      diagnosis:
+        record.Diagnosis?.DiagnosisName ||
+        record.DiagnosisName ||
+        "Not specified",
+      treatment:
+        record.Treatment?.TreatmentName ||
+        record.TreatmentName ||
+        "Not specified",
+      vitalSigns: record.VitalSigns || {},
+      notes: record.Notes || "",
+      assessment: record.Assessment || "",
+      plan: record.Plan || "",
+      status: record.Status || "Final",
+      createdAt: record.created_at,
+      updatedAt: record.updated_at,
+    }));
+
+    console.log(
+      `Successfully loaded ${medicalRecords.value.length} medical records`
+    );
   } catch (err) {
     console.error("Error fetching medical records:", err);
     error.value =

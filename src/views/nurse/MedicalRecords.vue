@@ -543,7 +543,12 @@ const setupRealtimeSubscription = () => {
 
 // Lifecycle hooks
 onMounted(async () => {
-  if (isAuthenticated.value && isNurse.value) {
+  // Initialize auth if needed
+  if (!authStore.isInitialized) {
+    await authStore.initializeAuth();
+  }
+
+  if (authStore.isAuthenticated && authStore.isNurse) {
     await fetchMedicalRecords();
     setupRealtimeSubscription();
   } else {

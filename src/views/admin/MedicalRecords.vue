@@ -1,6 +1,10 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
 import { useSupabase } from "@/composables/useSupabase.js";
+import { useAuthStore } from "@/stores/auth.js";
+
+// Auth store
+const authStore = useAuthStore();
 
 // Initialize Supabase composable
 const {
@@ -408,6 +412,16 @@ const printRecord = (record) => {
 
 // Initialize component
 onMounted(async () => {
+  // Initialize auth if needed
+  if (!authStore.isInitialized) {
+    await authStore.initializeAuth();
+  }
+
+  if (!authStore.isAuthenticated || !authStore.user) {
+    console.error("User not authenticated");
+    return;
+  }
+
   try {
     // Fetch medical records
     const recordsResult = await medicalRecordOps.getAllMedicalRecords();

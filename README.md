@@ -20,7 +20,24 @@ A comprehensive web-based information system designed for the Barangay Baan KM-3
 - ✅ Medical records management
 - ✅ System notifications and alerts
 - ✅ Reports and analytics dashboard
-- ONLY THE USER WHO CAN CREATE/ MANAGE USERS
+- ✅ Protected system administrator account (cannot be deleted)
+
+#### Staff Management
+
+The admin can manage staff members through the **Manage Staff** module:
+
+- **Create Staff**: When creating a new staff member, the system automatically generates:
+  - **Username**: `firstname.surname` (lowercase)
+  - **Default Password**: `Surname_Firstname<last-4-digits-of-contact-number>`
+    - Example: For "Juan Dela Cruz" with contact "09171234567", password would be `DelaCruz_Juan4567`
+  - Credentials are displayed after creation for secure sharing with the staff member
+  
+- **Edit Staff**: Update staff information including name, contact details, and status
+  
+- **Delete Staff**: Remove staff members from the system
+  - ⚠️ **Note**: The system administrator account (`admin@clinic.com`) cannot be deleted for security purposes
+  
+- **Last Login Tracking**: The system displays the last sign-in time for each staff member from Supabase Auth
 
 #### Nurse Features
 
@@ -37,17 +54,61 @@ A comprehensive web-based information system designed for the Barangay Baan KM-3
 - ✅ Medical record access
 - ✅ Health reminders and notifications
 
-## 🛠️ Tech Stack
+## 🛠️ Tech Stack & Architecture
 
-- **Frontend**: Vue.js 3 + Vuetify + Pinia
-- **Backend**: Supabase (Authentication + PostgreSQL)
-- **Server Logic**: Node.js (Gmail/SMS automation)
-- **Styling**: Bootstrap 5 + Bootstrap Icons
+The project uses a **hybrid architecture** combining a Vue.js frontend, a Supabase Backend-as-a-Service, and a lightweight Node.js/Express server.
+
+### 🌐 Frontend (Client)
+
+- **Framework**: Vue.js 3
 - **State Management**: Pinia
+- **Routing**: Vue Router
+- **Styling**: Bootstrap 5 + Custom CSS
+- **Interactions**: Direct communication with Supabase for most data operations
+
+### ☁️ Supabase (Primary Backend)
+
+- **Database**: PostgreSQL
+- **Authentication**: Supabase Auth
+- **Data Access**: Client-side queries for Patients, Staff, Medical Records, Appointments
+- **Realtime**: Live updates for appointments and notifications
+
+### ⚙️ Express Server (Auxiliary Backend)
+
+- **Role**: Handles sensitive operations and third-party integrations
+- **Endpoints**:
+  - `/api/emails/*` - Automated email notifications
+  - `/api/admin/accounts/*` - Account creation logging and history
+  - `/api/auth/logout` - Server-side session cleanup
+- **Location**: `/server` directory
 
 ## 🚦 Getting Started
 
 ### Prerequisites
+
+- Node.js (v16+)
+- Supabase Project
+- Gmail Account (for email service)
+
+### running the Application
+
+To run the complete application (Frontend + Express Server), use:
+
+```bash
+npm run dev:full
+```
+
+Or run them individually in separate terminals:
+
+```bash
+# Terminal 1: Frontend (Vite) - http://localhost:5173
+npm run dev
+
+# Terminal 2: Backend (Express) - http://localhost:3000
+npm run server
+```
+
+### Environment Setup
 
 - Node.js (v16 or higher)
 - npm or yarn

@@ -223,7 +223,7 @@ export const useAppointmentRequestsStore = defineStore(
       }
     };
 
-    const setupRealtimeSubscription = () => {
+    const setupRealtimeSubscription = async () => {
       if (realtimeSubscription.value) {
         return; // Already subscribed
       }
@@ -231,56 +231,58 @@ export const useAppointmentRequestsStore = defineStore(
       try {
         const { users } = useSupabase();
 
-        const subscription = users.subscribeToAppointmentRequests((payload) => {
-          console.log("Realtime appointment update:", payload);
+        const subscription = await users.subscribeToAppointmentRequests(
+          (payload) => {
+            console.log("Realtime appointment update:", payload);
 
-          if (payload.eventType === "INSERT") {
-            // Add new appointment request
-            const newRequest = {
-              id: payload.new.AppointmentID,
-              patientId: payload.new.PatientID,
-              nurseId: payload.new.ScheduledBy,
-              requestedDate: payload.new.DateTime,
-              status: payload.new.Status,
-              notes: payload.new.Notes,
-              type: payload.new.Type,
-              duration: payload.new.Duration,
-              priority: payload.new.Priority,
-              reason: payload.new.Reason,
-              symptoms: payload.new.Symptoms,
-              patientName: "Loading...", // Will be updated when full data is fetched
-              patientContact: "",
-              requestedBy: "System",
-              requestedAt: payload.new.created_at,
-              createdAt: payload.new.created_at,
-              updatedAt: payload.new.updated_at,
-            };
-            appointmentRequests.value.push(newRequest);
-          } else if (payload.eventType === "UPDATE") {
-            // Update existing appointment request
-            const existingRequest = appointmentRequests.value.find(
-              (r) => r.id === payload.new.AppointmentID
-            );
-            if (existingRequest) {
-              Object.assign(existingRequest, {
+            if (payload.eventType === "INSERT") {
+              // Add new appointment request
+              const newRequest = {
+                id: payload.new.AppointmentID,
+                patientId: payload.new.PatientID,
+                nurseId: payload.new.ScheduledBy,
+                requestedDate: payload.new.DateTime,
                 status: payload.new.Status,
                 notes: payload.new.Notes,
-                requestedDate: payload.new.DateTime,
                 type: payload.new.Type,
                 duration: payload.new.Duration,
                 priority: payload.new.Priority,
                 reason: payload.new.Reason,
                 symptoms: payload.new.Symptoms,
+                patientName: "Loading...", // Will be updated when full data is fetched
+                patientContact: "",
+                requestedBy: "System",
+                requestedAt: payload.new.created_at,
+                createdAt: payload.new.created_at,
                 updatedAt: payload.new.updated_at,
-              });
+              };
+              appointmentRequests.value.push(newRequest);
+            } else if (payload.eventType === "UPDATE") {
+              // Update existing appointment request
+              const existingRequest = appointmentRequests.value.find(
+                (r) => r.id === payload.new.AppointmentID
+              );
+              if (existingRequest) {
+                Object.assign(existingRequest, {
+                  status: payload.new.Status,
+                  notes: payload.new.Notes,
+                  requestedDate: payload.new.DateTime,
+                  type: payload.new.Type,
+                  duration: payload.new.Duration,
+                  priority: payload.new.Priority,
+                  reason: payload.new.Reason,
+                  symptoms: payload.new.Symptoms,
+                  updatedAt: payload.new.updated_at,
+                });
+              }
+            } else if (payload.eventType === "DELETE") {
+              // Remove appointment request
+              appointmentRequests.value = appointmentRequests.value.filter(
+                (r) => r.id !== payload.old.AppointmentID
+              );
             }
-          } else if (payload.eventType === "DELETE") {
-            // Remove appointment request
-            appointmentRequests.value = appointmentRequests.value.filter(
-              (r) => r.id !== payload.old.AppointmentID
-            );
           }
-        });
+        );
 
         realtimeSubscription.value = subscription;
       } catch (err) {

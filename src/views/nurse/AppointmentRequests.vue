@@ -1,9 +1,11 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useAppointmentRequestsStore } from "../../stores/appointmentRequests";
+import { useAuthStore } from "../../stores/auth.js";
 
 // Store
 const appointmentStore = useAppointmentRequestsStore();
+const authStore = useAuthStore();
 
 // Reactive data
 const search = ref("");
@@ -30,7 +32,7 @@ const appointmentForm = ref({
 });
 
 // Computed properties
-const isNurse = computed(() => true); // Mock nurse role
+const isNurse = computed(() => authStore.isNurse);
 
 const loading = computed(() => appointmentStore.loading);
 const error = computed(() => appointmentStore.error);
@@ -52,17 +54,11 @@ const filteredAppointments = computed(() => {
   });
 });
 
-const pendingAppointments = computed(() =>
-  appointmentStore.pendingRequests
-);
+const pendingAppointments = computed(() => appointmentStore.pendingRequests);
 
-const todayAppointments = computed(() =>
-  appointmentStore.todayRequests
-);
+const todayAppointments = computed(() => appointmentStore.todayRequests);
 
-const upcomingRequests = computed(() =>
-  appointmentStore.upcomingRequests
-);
+const upcomingRequests = computed(() => appointmentStore.upcomingRequests);
 
 // Methods
 
@@ -289,9 +285,14 @@ const isUpcoming = (dateTime) => {
 
 // Lifecycle hooks
 onMounted(async () => {
-  if (isNurse.value) {
+  // Ensure auth is initialized before fetching data
+  if (!authStore.isInitialized) {
+    await authStore.initializeAuth();
+  }
+
+  if (authStore.isAuthenticated && authStore.isNurse) {
     await fetchAppointments();
-    appointmentStore.setupRealtimeSubscription();
+    await appointmentStore.setupRealtimeSubscription();
   }
 });
 

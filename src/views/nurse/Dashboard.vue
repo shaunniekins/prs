@@ -1,6 +1,10 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
 import { useSupabase } from "../../composables/useSupabase";
+import { useAuthStore } from "../../stores/auth";
+
+// Auth store for checking authentication state
+const authStore = useAuthStore();
 
 // Reactive data
 const loading = ref(false);
@@ -33,6 +37,16 @@ const fetchDashboardData = async () => {
   error.value = null;
 
   try {
+    // Ensure auth is initialized before fetching data
+    if (!authStore.isInitialized) {
+      await authStore.initializeAuth();
+    }
+
+    // Check if user is authenticated
+    if (!authStore.isAuthenticated || !authStore.user) {
+      throw new Error("Please log in to view the dashboard");
+    }
+
     // Fetch appointments for today
     const appointmentsData = await appointments.getMyStaffAppointments();
     const today = new Date().toDateString();
@@ -117,8 +131,8 @@ const fetchDashboardData = async () => {
 };
 
 // Initialize data on component mount
-onMounted(() => {
-  fetchDashboardData();
+onMounted(async () => {
+  await fetchDashboardData();
 });
 
 // Helper methods for appointments

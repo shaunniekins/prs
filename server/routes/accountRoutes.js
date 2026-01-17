@@ -127,7 +127,7 @@ router.post("/", async (req, res) => {
         await userService.deleteUserProfile(userId);
         return res.status(500).json({ message: patientError.message });
       }
-    } else if (role === "Staff") {
+    } else if (["Staff", "Nurse", "Admin"].includes(role)) {
       const { data: staffData, error: staffError } =
         await userService.createStaffProfile({
           UserID: userId,

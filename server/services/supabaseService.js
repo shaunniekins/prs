@@ -70,6 +70,14 @@ export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
   },
 });
 
+// Create Supabase admin client with service role key for admin operations (accessing auth.users)
+export const supabaseAdmin = createClient(supabaseUrl, supabaseSecretKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+  },
+});
+
 // Patient services
 export const patientService = {
   // Get all patients (staff only)
@@ -86,7 +94,7 @@ export const patientService = {
       .select(
         `
         *,
-        Users!inner(fullName, email)
+        Users!inner(fullName, Email)
       `
       )
       .eq("PatientID", id)
@@ -316,19 +324,97 @@ export const appointmentService = {
 // Staff services
 export const staffService = {
   // Get all staff (admin only)
+  // Using supabaseAdmin to bypass RLS since server doesn't have user session context
+  // Using left join (no !inner) so staff are returned even without Users record
   async getAllStaff() {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("Staff")
       .select(
         `
         *,
-        Users!inner(fullName, email),
+        Users(fullName, Email),
         Role(RoleName)
       `
       )
       .order("created_at", { ascending: false });
 
     return { data, error };
+  },
+
+  // Get all staff with auth info (includes last_sign_in_at from auth.users)
+  async getAllStaffWithAuthInfo() {
+    // First get all staff data
+    // Using supabaseAdmin to bypass RLS since server doesn't have user session context
+    // Using left join (no !inner) so staff are returned even without Users record
+    console.log(
+      "📡 [staffService.getAllStaffWithAuthInfo] Querying Staff table..."
+    );
+    const { data: staffData, error: staffError } = await supabaseAdmin
+      .from("Staff")
+      .select(
+        `
+        *,
+        Users(fullName, Email, UserID),
+        Role(RoleName)
+      `
+      )
+      .order("created_at", { ascending: false });
+
+    console.log(
+      "📊 [staffService.getAllStaffWithAuthInfo] Staff query result:",
+      staffData?.length || 0,
+      "records"
+    );
+    console.log(
+      "📊 [staffService.getAllStaffWithAuthInfo] Staff query error:",
+      staffError
+    );
+
+    if (staffError) {
+      console.error(
+        "❌ [staffService.getAllStaffWithAuthInfo] Query error:",
+        staffError
+      );
+      return { data: null, error: staffError };
+    }
+
+    // Get auth users data with last_sign_in_at
+    try {
+      const { data: authUsersData, error: authError } =
+        await supabaseAdmin.auth.admin.listUsers();
+
+      if (authError) {
+        console.error("Error fetching auth users:", authError);
+        // Return staff data without auth info if there's an error
+        return { data: staffData, error: null };
+      }
+
+      // Create a map of auth users by ID for quick lookup
+      const authUsersMap = new Map();
+      if (authUsersData?.users) {
+        authUsersData.users.forEach((user) => {
+          authUsersMap.set(user.id, user);
+        });
+      }
+
+      // Merge staff data with auth info
+      const staffWithAuth = staffData.map((staff) => {
+        const authUser = authUsersMap.get(staff.UserID);
+        return {
+          ...staff,
+          Users: {
+            ...staff.Users,
+            last_sign_in_at: authUser?.last_sign_in_at || null,
+          },
+        };
+      });
+
+      return { data: staffWithAuth, error: null };
+    } catch (err) {
+      console.error("Error enriching staff with auth info:", err);
+      // Return staff data without auth info if there's an error
+      return { data: staffData, error: null };
+    }
   },
 
   // Get staff by ID
@@ -338,7 +424,7 @@ export const staffService = {
       .select(
         `
         *,
-        Users!inner(fullName, email),
+        Users!inner(fullName, Email),
         Role(RoleName)
       `
       )
@@ -848,9 +934,9 @@ export const userService = {
     return { data, error };
   },
 
-  // Create user profile in Users table
+  // Create user profile in Users table (uses admin client to bypass RLS)
   async createUserProfile(userData) {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("Users")
       .insert([
         {
@@ -927,18 +1013,20 @@ export const userService = {
   },
 
   // Sign up user in Supabase Auth
-  async signUpUser(email, password, options) {
+  async signUpUser(email, password, userData) {
     const { data, error } = await supabaseAuth.auth.signUp({
       email,
       password,
-      options: options,
+      options: {
+        data: userData, // User metadata goes inside options.data
+      },
     });
     return { data, error };
   },
 
-  // Create patient profile in Patients table
+  // Create patient profile in Patients table (uses admin client to bypass RLS)
   async createPatientProfile(patientData) {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("Patients")
       .insert([
         {
@@ -952,9 +1040,9 @@ export const userService = {
     return { data, error };
   },
 
-  // Create staff profile in Staff table
+  // Create staff profile in Staff table (uses admin client to bypass RLS)
   async createStaffProfile(staffData) {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from("Staff")
       .insert([
         {

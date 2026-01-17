@@ -2,10 +2,12 @@
 import { ref, computed, onMounted } from "vue";
 import { useSupabase } from "../../composables/useSupabase.js";
 import { useAuth } from "../../composables/useAuth.js";
+import { useAuthStore } from "../../stores/auth.js";
 
 // Initialize composables
 const { notifications: notificationOps, users: userOps } = useSupabase();
 const { requireAdminAccess } = useAuth();
+const authStore = useAuthStore();
 
 // Reactive data
 const notifications = ref([]);
@@ -34,6 +36,11 @@ const notificationForm = ref({
 // Load data on mount
 onMounted(async () => {
   try {
+    // Initialize auth if needed
+    if (!authStore.isInitialized) {
+      await authStore.initializeAuth();
+    }
+
     await requireAdminAccess();
     await loadNotifications();
     await loadUsers();

@@ -4,8 +4,12 @@ import { useRouter } from "vue-router";
 import { authService, supabase } from "@/services/supabaseService.js";
 import api from "@/services/api.js";
 import { useNotify } from "@/composables/useNotify.js";
+import { useAuthStore } from "@/stores/auth.js";
 import { VueDatePicker } from "@vuepic/vue-datepicker";
 import "@vuepic/vue-datepicker/dist/main.css";
+
+// Auth store
+const authStore = useAuthStore();
 
 // Reactive data
 const creatingAccount = ref(false);
@@ -290,9 +294,16 @@ const fetchAccountCreationHistory = async (params = {}) => {
   }
 };
 
-onMounted(() => {
-  fetchCreatedAccounts();
-  fetchAccountCreationHistory();
+onMounted(async () => {
+  // Initialize auth if needed
+  if (!authStore.isInitialized) {
+    await authStore.initializeAuth();
+  }
+
+  if (authStore.isAuthenticated && authStore.user) {
+    fetchCreatedAccounts();
+    fetchAccountCreationHistory();
+  }
 });
 
 const sendingCredentials = ref(false);
@@ -583,7 +594,8 @@ const resetForm = () => {
                       required
                     >
                       <option value="Patient">Patient</option>
-                      <option value="Staff">Staff</option>
+                      <option value="Nurse">Nurse</option>
+                      <option value="Admin">Admin</option>
                     </select>
                   </div>
 

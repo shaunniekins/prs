@@ -1,8 +1,10 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
 import { useSupabase } from "../../composables/useSupabase.js";
+import { useAuthStore } from "../../stores/auth.js";
 
 const { consultationNotes: consultationNotesOps, user } = useSupabase();
+const authStore = useAuthStore();
 
 // Reactive data
 const loading = ref(false);
@@ -304,8 +306,15 @@ const printNote = (note) => {
   alert("Print functionality would be implemented here");
 };
 
-onMounted(() => {
-  fetchNotes();
+onMounted(async () => {
+  // Ensure auth is initialized before fetching data
+  if (!authStore.isInitialized) {
+    await authStore.initializeAuth();
+  }
+
+  if (authStore.isAuthenticated) {
+    await fetchNotes();
+  }
 });
 </script>
 

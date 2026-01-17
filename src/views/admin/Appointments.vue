@@ -1,6 +1,10 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
 import useSupabase from "@/composables/useSupabase";
+import { useAuthStore } from "@/stores/auth.js";
+
+// Auth store
+const authStore = useAuthStore();
 
 // Initialize Supabase composable
 const {
@@ -413,6 +417,16 @@ const scheduleAppointmentForDate = (date) => {
 
 // Initialize component
 onMounted(async () => {
+  // Initialize auth if needed
+  if (!authStore.isInitialized) {
+    await authStore.initializeAuth();
+  }
+
+  if (!authStore.isAuthenticated || !authStore.user) {
+    console.error("User not authenticated");
+    return;
+  }
+
   try {
     // Load appointments and related data
     await fetchAppointments();
@@ -970,7 +984,7 @@ onMounted(async () => {
                       :value="staffMember.Users?.fullName"
                     >
                       {{ staffMember.Users?.fullName }} -
-                      {{ staffMember.Role?.RoleName }}
+                      {{ staffMember.Users?.RoleName }}
                     </option>
                   </select>
                 </div>
@@ -1099,7 +1113,7 @@ onMounted(async () => {
                       :value="staffMember.Users?.fullName"
                     >
                       {{ staffMember.Users?.fullName }} -
-                      {{ staffMember.Role?.RoleName }}
+                      {{ staffMember.Users?.RoleName }}
                     </option>
                   </select>
                 </div>

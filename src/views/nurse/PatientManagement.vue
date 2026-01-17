@@ -2,16 +2,19 @@
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useSupabase } from "../../composables/useSupabase.js";
 import { useAuthStore } from "../../stores/auth.js";
+import { realtimeService } from "../../services/supabaseService.js";
 
 // Supabase integration
 const { patients, loading, error } = useSupabase();
-const { userRole, isAuthenticated } = useAuthStore();
+const authStore = useAuthStore();
+const userRole = computed(() => authStore.userRole);
+const isAuthenticated = computed(() => authStore.isAuthenticated);
 
 // Reactive data from Supabase
 const patientsList = ref([]);
 const isLoading = ref(false);
 const errorMessage = ref(null);
-let unsubscribePatients = null;
+const patientsChannel = ref(null);
 
 // Reactive data
 const search = ref("");
@@ -258,6 +261,81 @@ const viewMedicalHistory = (patient) => {
   // In a real application, this would navigate to the patient's medical records
   alert("Medical history view would be implemented here");
 };
+
+// Fetch patients from Supabase
+const fetchPatients = async () => {
+  isLoading.value = true;
+  errorMessage.value = null;
+  try {
+    const data = await patients.getAllPatients();
+
+    // Map the data to the component's expected format
+    patientsList.value = (data || []).map((patient) => ({
+      PatientID: patient.PatientID,
+      firstName: patient.FirstName,
+      surname: patient.Surname,
+      suffix: patient.Suffix || "",
+      birthDate: patient.BirthDate,
+      gender: patient.Gender,
+      contactNumber: patient.ContactNumber || "",
+      email: patient.Users?.Email || "",
+      address: patient.Address || "",
+      bloodType: patient.BloodType || "",
+      emergencyContact: patient.EmergencyContact || "",
+      allergies: patient.Allergies || "",
+      status: patient.IsActive ? "Active" : "Inactive",
+      registrationDate: patient.created_at
+        ? new Date(patient.created_at).toLocaleDateString()
+        : new Date().toLocaleDateString(),
+      lastVisit: "Never", // Would need appointment data to calculate this
+      riskLevel: "Low", // Default value
+    }));
+
+    console.log(`✅ Loaded ${patientsList.value.length} patients`);
+  } catch (err) {
+    console.error("❌ Error loading patients:", err);
+    errorMessage.value = "Failed to load patient data. Please try again.";
+    patientsList.value = [];
+  } finally {
+    isLoading.value = false;
+  }
+};
+
+// Handle real-time updates
+const handlePatientUpdate = (payload) => {
+  console.log("Real-time patient update:", payload);
+  // Re-fetch to get properly formatted data with joins
+  fetchPatients();
+};
+
+// Initialize on mount
+onMounted(async () => {
+  // Initialize auth if needed
+  if (!authStore.isInitialized) {
+    await authStore.initializeAuth();
+  }
+
+  if (!authStore.isAuthenticated || !authStore.user) {
+    console.error("User not authenticated");
+    return;
+  }
+
+  try {
+    await fetchPatients();
+    // Subscribe to real-time updates
+    patientsChannel.value =
+      realtimeService.subscribeToPatients(handlePatientUpdate);
+  } catch (err) {
+    console.error("Error initializing patient management:", err);
+  }
+});
+
+// Cleanup on unmount
+onUnmounted(() => {
+  if (patientsChannel.value) {
+    realtimeService.unsubscribe(patientsChannel.value);
+  }
+});
 </script>
 
 <template>

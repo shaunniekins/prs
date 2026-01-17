@@ -6,7 +6,8 @@ import { useAuthStore } from "../../stores/auth.js";
 // Initialize composables
 const { appointments, medicalRecords, patients, loading, error } =
   useSupabase();
-const { user } = useAuthStore();
+const authStore = useAuthStore();
+const { user } = authStore;
 
 // Reactive data
 const appointmentsData = ref([]);
@@ -105,6 +106,19 @@ const fetchData = async () => {
   try {
     console.log("🔍 [Dashboard] Starting data fetch...");
 
+    // Ensure auth is initialized before fetching data
+    if (!authStore.isInitialized) {
+      console.log("🔍 [Dashboard] Initializing auth...");
+      await authStore.initializeAuth();
+    }
+
+    // Check if user is authenticated
+    if (!authStore.isAuthenticated || !authStore.user) {
+      throw new Error("Please log in to view the dashboard");
+    }
+
+    console.log("✅ [Dashboard] Auth initialized, user:", authStore.user?.id);
+
     // Fetch patient's appointments
     console.log("🔍 [Dashboard] Fetching appointments...");
     const appointmentsResult = await appointments.getMyAppointments();
@@ -153,7 +167,8 @@ const fetchData = async () => {
       stack: err.stack,
       name: err.name,
     });
-    error.value = "Failed to load dashboard data. Please try again.";
+    error.value =
+      err.message || "Failed to load dashboard data. Please try again.";
   } finally {
     loading.value = false;
   }

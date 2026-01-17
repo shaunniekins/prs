@@ -140,8 +140,9 @@ async function seedUser(userData) {
       .eq("Email", email);
 
     if (existingUsers && existingUsers.length > 0) {
-      console.log(`   ⚠️ User already exists, skipping...`);
-      return { success: true, skipped: true, email };
+      console.log(
+        `   ℹ️ User exists in public.Users, will update details and links...`
+      );
     }
 
     // Step 2: Create auth user
@@ -213,55 +214,94 @@ async function seedUser(userData) {
 
     // Step 5: Create Staff or Patient record
     if (staffData && (role === "admin" || role === "nurse")) {
-      const { data: staff, error: staffError } = await supabase
+      // Check if staff record already exists for this user
+      const { data: existingStaff } = await supabase
         .from("Staff")
-        .upsert(
-          {
+        .select("StaffID")
+        .eq("UserID", userId)
+        .maybeSingle();
+
+      let staffOp;
+
+      if (existingStaff) {
+        console.log(`   🔄 Updating existing Staff record...`);
+        staffOp = await supabase
+          .from("Staff")
+          .update({
+            RoleID: roleId,
+            ...staffData,
+          })
+          .eq("StaffID", existingStaff.StaffID)
+          .select()
+          .single();
+      } else {
+        console.log(`   ➕ Creating new Staff record...`);
+        staffOp = await supabase
+          .from("Staff")
+          .insert({
             UserID: userId,
             RoleID: roleId,
             ...staffData,
             created_at: new Date().toISOString(),
-          },
-          {
-            onConflict: "UserID",
-          }
-        )
-        .select()
-        .single();
+          })
+          .select()
+          .single();
+      }
+
+      const { data: staff, error: staffError } = staffOp;
 
       if (staffError) {
         console.error(
-          `   ❌ Failed to create Staff entry:`,
+          `   ❌ Failed to manage Staff entry:`,
           staffError.message
         );
       } else {
-        console.log(`   ✅ Staff record created: ${staff.StaffID}`);
+        console.log(`   ✅ Staff record managed: ${staff.StaffID}`);
       }
     }
 
     if (patientData && role === "patient") {
-      const { data: patient, error: patientError } = await supabase
+      // Check if patient record already exists for this user
+      const { data: existingPatient } = await supabase
         .from("Patients")
-        .upsert(
-          {
+        .select("PatientID")
+        .eq("UserID", userId)
+        .maybeSingle();
+
+      let patientOp;
+
+      if (existingPatient) {
+        console.log(`   🔄 Updating existing Patient record...`);
+        patientOp = await supabase
+          .from("Patients")
+          .update({
+            ...patientData,
+          })
+          .eq("PatientID", existingPatient.PatientID)
+          .select()
+          .single();
+      } else {
+        console.log(`   ➕ Creating new Patient record...`);
+        patientOp = await supabase
+          .from("Patients")
+          .insert({
             UserID: userId,
             ...patientData,
             created_at: new Date().toISOString(),
-          },
-          {
-            onConflict: "UserID",
-          }
-        )
-        .select()
-        .single();
+          })
+          .select()
+          .single();
+      }
+
+      const { data: patient, error: patientError } = patientOp;
 
       if (patientError) {
         console.error(
-          `   ❌ Failed to create Patients entry:`,
+          `   ❌ Failed to manage Patients entry:`,
           patientError.message
         );
       } else {
-        console.log(`   ✅ Patient record created: ${patient.PatientID}`);
+        console.log(`   ✅ Patient record managed: ${patient.PatientID}`);
 
         // Link patient to user
         await supabase
@@ -285,6 +325,21 @@ async function main() {
   console.log(`📍 Supabase URL: ${supabaseUrl}`);
   console.log(`🔑 Default password: ${DEFAULT_PASSWORD}`);
   console.log("=".repeat(50));
+
+  // Ensure Roles exist before seeding users
+  console.log("\n🛠  Ensuring Roles exist...");
+  const { error: rolesError } = await supabase
+    .from("Role")
+    .upsert(
+      [{ RoleName: "admin" }, { RoleName: "nurse" }, { RoleName: "patient" }],
+      { onConflict: "RoleName" }
+    );
+
+  if (rolesError) {
+    console.error("❌ Failed to insert roles:", rolesError.message);
+  } else {
+    console.log("✅ Roles ensured.");
+  }
 
   const results = [];
 

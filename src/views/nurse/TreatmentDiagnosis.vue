@@ -10,7 +10,9 @@ const {
   loading: supabaseLoading,
   error: supabaseError,
 } = useSupabase();
-const { isAuthenticated, userRole } = useAuthStore();
+const authStore = useAuthStore();
+const isAuthenticated = computed(() => authStore.isAuthenticated);
+const userRole = computed(() => authStore.userRole);
 
 // Reactive data for treatments and diagnoses
 const treatmentsList = ref([]);
@@ -371,7 +373,14 @@ const removeMedication = (index) => {
 
 // Lifecycle hooks
 onMounted(async () => {
-  await fetchData();
+  // Ensure auth is initialized before fetching data
+  if (!authStore.isInitialized) {
+    await authStore.initializeAuth();
+  }
+
+  if (authStore.isAuthenticated) {
+    await fetchData();
+  }
 });
 
 // Error handling

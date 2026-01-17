@@ -58,21 +58,21 @@ const fetchPatients = async () => {
     const data = await patientOps.getAllPatients();
     patientsList.value = data.map((patient) => ({
       PatientID: patient.PatientID,
-      firstName: patient.firstName,
-      surname: patient.surname,
-      suffix: patient.suffix,
-      address: patient.address,
-      gender: patient.gender,
-      birthDate: patient.birthDate,
-      contactNumber: patient.contactNumber,
-      email: patient.email,
-      bloodType: patient.bloodType,
-      emergencyContact: patient.emergencyContact,
+      firstName: patient.FirstName,
+      surname: patient.Surname,
+      suffix: patient.Suffix,
+      address: patient.Address,
+      gender: patient.Gender,
+      birthDate: patient.BirthDate,
+      contactNumber: patient.ContactNumber,
+      email: patient.Users?.Email,
+      bloodType: patient.BloodType,
+      emergencyContact: patient.EmergencyContact,
       registrationDate: patient.created_at
         ? new Date(patient.created_at).toISOString().split("T")[0]
         : null,
-      lastVisit: patient.lastVisit,
-      status: patient.status || "Active",
+      lastVisit: patient.lastVisit, // This might need to be fetched separately or joined
+      status: patient.IsActive ? "Active" : "Inactive",
       Users: patient.Users, // Keep the joined user data
     }));
   } catch (err) {
@@ -287,7 +287,14 @@ const calculateAge = (birthDate) => {
 };
 
 onMounted(async () => {
-  await fetchPatients();
+  // Initialize auth if needed
+  if (!authStore.isInitialized) {
+    await authStore.initializeAuth();
+  }
+
+  if (authStore.isAuthenticated && authStore.user) {
+    await fetchPatients();
+  }
 });
 </script>
 

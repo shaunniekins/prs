@@ -1,9 +1,11 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
 import { useSupabase } from "../../composables/useSupabase.js";
+import { useAuthStore } from "../../stores/auth.js";
 
 // Initialize composables
 const { notifications: notificationOps } = useSupabase();
+const authStore = useAuthStore();
 
 // Reactive data
 const loading = ref(false);
@@ -52,15 +54,22 @@ const fetchNotifications = async () => {
   error.value = null;
 
   try {
-    const result = await notificationOps.getMyNotifications();
-    if (result.success) {
-      notifications.value = result.data || [];
-      console.log(
-        `Successfully loaded ${notifications.value.length} notifications`
-      );
-    } else {
-      throw new Error(result.error || "Failed to fetch notifications");
+    // Ensure auth is initialized before fetching data
+    if (!authStore.isInitialized) {
+      await authStore.initializeAuth();
     }
+
+    // Check if user is authenticated
+    if (!authStore.isAuthenticated || !authStore.user) {
+      throw new Error("Please log in to view notifications");
+    }
+
+    const result = await notificationOps.getMyNotifications();
+    // The function returns data directly, not an object with success property
+    notifications.value = result || [];
+    console.log(
+      `Successfully loaded ${notifications.value.length} notifications`
+    );
   } catch (err) {
     console.error("Error fetching notifications:", err);
     error.value =
@@ -73,57 +82,39 @@ const fetchNotifications = async () => {
 
 const markAsRead = async (notification) => {
   try {
-    const result = await notificationOps.markAsRead(
-      notification.NotificationID
-    );
-    if (result.success) {
-      notification.IsRead = true;
-      console.log("Notification marked as read:", notification.NotificationID);
-    } else {
-      throw new Error(result.error || "Failed to mark notification as read");
-    }
+    await notificationOps.markAsRead(notification.NotificationID);
+    notification.IsRead = true;
+    console.log("Notification marked as read:", notification.NotificationID);
   } catch (err) {
     console.error("Error marking notification as read:", err);
-    error.value = "Failed to mark notification as read";
+    error.value = err.message || "Failed to mark notification as read";
   }
 };
 
 const markAllAsRead = async () => {
   try {
-    const result = await notificationOps.markAllAsRead();
-    if (result.success) {
-      notifications.value.forEach((n) => (n.IsRead = true));
-      console.log("All notifications marked as read");
-    } else {
-      throw new Error(
-        result.error || "Failed to mark all notifications as read"
-      );
-    }
+    await notificationOps.markAllAsRead();
+    notifications.value.forEach((n) => (n.IsRead = true));
+    console.log("All notifications marked as read");
   } catch (err) {
     console.error("Error marking all notifications as read:", err);
-    error.value = "Failed to mark all notifications as read";
+    error.value = err.message || "Failed to mark all notifications as read";
   }
 };
 
 const deleteNotification = async (notification) => {
   try {
-    const result = await notificationOps.deleteNotification(
-      notification.NotificationID
+    await notificationOps.deleteNotification(notification.NotificationID);
+    const index = notifications.value.findIndex(
+      (n) => n.NotificationID === notification.NotificationID
     );
-    if (result.success) {
-      const index = notifications.value.findIndex(
-        (n) => n.NotificationID === notification.NotificationID
-      );
-      if (index !== -1) {
-        notifications.value.splice(index, 1);
-        console.log("Notification deleted:", notification.NotificationID);
-      }
-    } else {
-      throw new Error(result.error || "Failed to delete notification");
+    if (index !== -1) {
+      notifications.value.splice(index, 1);
+      console.log("Notification deleted:", notification.NotificationID);
     }
   } catch (err) {
     console.error("Error deleting notification:", err);
-    error.value = "Failed to delete notification";
+    error.value = err.message || "Failed to delete notification";
   }
 };
 

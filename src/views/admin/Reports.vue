@@ -3,10 +3,12 @@ import { ref, computed, onMounted } from "vue";
 import { Line, Bar, Doughnut } from "vue-chartjs";
 import { useSupabase } from "../../composables/useSupabase.js";
 import { useAuth } from "../../composables/useAuth.js";
+import { useAuthStore } from "../../stores/auth.js";
 
 // Initialize composables
 const { reports: reportOps, users: userOps } = useSupabase();
 const { requireAdminAccess } = useAuth();
+const authStore = useAuthStore();
 
 // Reactive data
 const loading = ref(false);
@@ -633,7 +635,12 @@ const getWorkloadData = () => {
 
 onMounted(async () => {
   try {
-    requireAdminAccess();
+    // Initialize auth if needed
+    if (!authStore.isInitialized) {
+      await authStore.initializeAuth();
+    }
+
+    await requireAdminAccess();
     await initializeData();
   } catch (error) {
     console.error("Error initializing reports:", error);

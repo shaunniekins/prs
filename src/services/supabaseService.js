@@ -77,13 +77,14 @@ export const authService = {
 // Patient services
 export const patientService = {
   // Get all patients (staff only)
+  // Using left join (no !inner) so patients are returned even without Users record
   getAllPatients: async () => {
     const { data, error } = await supabase
       .from("Patients")
       .select(
         `
         *,
-        Users!inner(email)
+        Users(email)
       `
       )
       .order("created_at", { ascending: false });
@@ -98,7 +99,7 @@ export const patientService = {
       .select(
         `
         *,
-        Users!inner(email)
+        Users(email)
       `
       )
       .eq("PatientID", id)
@@ -462,14 +463,44 @@ export const appointmentService = {
 
 // Staff services
 export const staffService = {
-  // Get all staff (admin only)
+  // Get all staff (admin only) - uses server API to get auth info including last_sign_in_at
   getAllStaff: async () => {
-    const { data, error } = await supabase
-      .from("Staff")
-      .select("*")
-      .order("StaffID", { ascending: false });
-
-    return { data, error };
+    try {
+      console.log("📡 [staffService] Calling API /staff...");
+      // Import api dynamically to avoid circular dependency
+      const { default: api } = await import("./api.js");
+      const response = await api.get("/staff");
+      console.log(
+        "✅ [staffService] API response:",
+        response.data?.length,
+        "records"
+      );
+      return { data: response.data, error: null };
+    } catch (error) {
+      console.error(
+        "⚠️ [staffService] API failed, using fallback:",
+        error.message
+      );
+      // Fallback to direct Supabase query if API fails
+      console.log("📡 [staffService] Querying Supabase directly...");
+      const { data, error: dbError } = await supabase
+        .from("Staff")
+        .select(
+          `
+          *,
+          Users (Email),
+          Role (RoleName)
+        `
+        )
+        .order("StaffID", { ascending: false });
+      console.log(
+        "📊 [staffService] Supabase result:",
+        data?.length,
+        "records, error:",
+        dbError
+      );
+      return { data, error: dbError };
+    }
   },
 
   // Get staff by ID

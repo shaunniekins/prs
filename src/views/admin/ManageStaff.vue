@@ -1,6 +1,14 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
-import { staffService, realtimeService } from "../../services/supabaseService.js";
+import {
+  staffService,
+  realtimeService,
+} from "../../services/supabaseService.js";
+import { useAuthStore } from "../../stores/auth.js";
+import api from "../../services/api.js";
+
+// Auth store
+const authStore = useAuthStore();
 
 // Reactive data
 const loading = ref(false);
@@ -87,16 +95,34 @@ const fetchStaff = async () => {
   loading.value = true;
   try {
     // Fetch staff data from the service
+    console.log("📡 Fetching staff data...");
     const response = await staffService.getAllStaff();
+    console.log("📦 Staff response:", response);
+    console.log("📊 Staff data:", response.data);
+    console.log("📊 Staff data length:", response.data?.length || 0);
 
     // Format the data for display
     staffList.value = (response.data || []).map((staff) => ({
-      ...staff,
-      dateJoined: new Date(staff.dateJoined).toLocaleDateString(),
-      lastLogin: staff.lastLogin
-        ? new Date(staff.lastLogin).toLocaleString()
-        : "No login yet",
+      id: staff.StaffID,
+      userId: staff.UserID,
+      firstName: staff.FirstName,
+      surname: staff.Surname,
+      suffix: staff.Suffix,
+      contactNumber: staff.ContactNumber,
+      email: staff.Users?.Email,
+      role: staff.Role?.RoleName || staff.role, // Fallback if regular field exists
+      status: staff.IsActive ? "Active" : "Inactive",
+      dateJoined: staff.created_at
+        ? new Date(staff.created_at).toLocaleDateString()
+        : new Date().toLocaleDateString(),
+      lastLogin: staff.Users?.last_sign_in_at || null, // From Supabase auth
+      // Check if this is the system administrator (first admin account)
+      isSystemAdmin:
+        (staff.Role?.RoleName || staff.role)?.toLowerCase() === "admin" &&
+        staff.Users?.Email === "admin@clinic.com",
     }));
+
+    console.log("✅ Processed staff list:", staffList.value.length, "records");
   } catch (error) {
     console.error("❌ Error loading staff:", error);
     errorMessage.value = "Failed to load staff data. Please try again.";
@@ -153,17 +179,18 @@ const validateForm = () => {
     isValid = false;
   }
 
-  // Email validation (optional - for display purposes only)
-  if (staffForm.value.email && staffForm.value.email.trim()) {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(staffForm.value.email.trim())) {
-      formErrors.value.email =
-        "Please enter a valid email address (e.g., name@example.com)";
-      isValid = false;
-    } else if (staffForm.value.email.trim().length > 254) {
-      formErrors.value.email =
-        "Email address is too long (maximum 254 characters)";
-      isValid = false;
-    }
+  // Email validation (required for staff account creation)
+  if (!staffForm.value.email || !staffForm.value.email.trim()) {
+    formErrors.value.email = "Email is required for staff account creation";
+    isValid = false;
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(staffForm.value.email.trim())) {
+    formErrors.value.email =
+      "Please enter a valid email address (e.g., name@example.com)";
+    isValid = false;
+  } else if (staffForm.value.email.trim().length > 254) {
+    formErrors.value.email =
+      "Email address is too long (maximum 254 characters)";
+    isValid = false;
   }
 
   // Role validation
@@ -171,7 +198,13 @@ const validateForm = () => {
     formErrors.value.role = "Role is required";
     isValid = false;
   } else if (
-    !["nurse", "barangay health worker", "admin"].includes(staffForm.value.role)
+    ![
+      "nurse",
+      "Nurse",
+      // "barangay health worker",
+      "admin",
+      "Admin",
+    ].includes(staffForm.value.role)
   ) {
     formErrors.value.role = "Please select a valid role";
     isValid = false;
@@ -212,19 +245,29 @@ const openAddModal = () => {
 };
 
 const openEditModal = (staff) => {
-  if (!staff || !staff.staffId) {
+  if (!staff || !staff.id) {
     alert("Invalid staff member selected");
     return;
   }
 
   selectedStaff.value = staff;
+
+  // Normalize role to match select option values (capitalize first letter)
+  const normalizeRole = (role) => {
+    if (!role) return "Nurse";
+    const roleLower = role.toLowerCase();
+    if (roleLower === "nurse") return "Nurse";
+    if (roleLower === "admin") return "Admin";
+    return "Nurse"; // Default fallback
+  };
+
   staffForm.value = {
     firstName: staff.firstName || "",
     surname: staff.surname || "",
     suffix: staff.suffix || "",
     contactNumber: staff.contactNumber || "",
     email: staff.email || "",
-    role: staff.role || "Nurse",
+    role: normalizeRole(staff.role),
     status: staff.status || "Active",
   };
   formErrors.value = {};
@@ -233,11 +276,22 @@ const openEditModal = (staff) => {
   console.log(
     "✏️ Opening edit modal for staff:",
     staff.firstName,
-    staff.surname
+    staff.surname,
+    "Role:",
+    staff.role,
+    "->",
+    normalizeRole(staff.role)
   );
 };
 
 const openDeleteModal = (staff) => {
+  // Prevent deletion of system administrator account
+  if (staff.isSystemAdmin) {
+    alert(
+      "Cannot delete the system administrator account. This account is protected."
+    );
+    return;
+  }
   selectedStaff.value = staff;
   showDeleteModal.value = true;
 };
@@ -250,6 +304,22 @@ const closeModals = () => {
   resetForm();
 };
 
+// Generate default password: Surname_Firstname<last-4-digits-of-contact>
+const generateDefaultPassword = (surname, firstName, contactNumber) => {
+  const cleanSurname = surname.trim().replace(/\s+/g, "");
+  const cleanFirstName = firstName.trim().replace(/\s+/g, "");
+  const cleanContact = contactNumber.replace(/\D/g, ""); // Remove non-digits
+  const lastFourDigits = cleanContact.slice(-4) || "0000";
+  return `${cleanSurname}_${cleanFirstName}${lastFourDigits}`;
+};
+
+// Generate username from first name and surname
+const generateUsername = (firstName, surname) => {
+  const first = firstName.toLowerCase().replace(/[^a-z]/g, "");
+  const last = surname.toLowerCase().replace(/[^a-z]/g, "");
+  return `${first}.${last}`;
+};
+
 const addStaff = async () => {
   if (!validateForm()) {
     return;
@@ -258,33 +328,65 @@ const addStaff = async () => {
   loading.value = true;
 
   try {
-    // Prepare staff data for the service
-    const staffData = {
-      firstName: staffForm.value.firstName.trim(),
-      surname: staffForm.value.surname.trim(),
+    const firstName = staffForm.value.firstName.trim();
+    const surname = staffForm.value.surname.trim();
+    const contactNumber = staffForm.value.contactNumber.trim();
+    const email = staffForm.value.email.trim();
+
+    // Generate default password: Surname_Firstname<last-4-digits-of-contact>
+    const generatedPassword = generateDefaultPassword(
+      surname,
+      firstName,
+      contactNumber
+    );
+    const username = generateUsername(firstName, surname);
+
+    // Map role to expected format
+    const roleMap = {
+      nurse: "Nurse",
+      admin: "Admin",
+      Nurse: "Nurse",
+      Admin: "Admin",
+    };
+    const role = roleMap[staffForm.value.role] || "Nurse";
+
+    // Prepare payload for the account creation API
+    const payload = {
+      username: username,
+      email: email,
+      role: role,
+      password: generatedPassword,
+      firstName: firstName,
+      lastName: surname,
       suffix: staffForm.value.suffix.trim() || "",
-      contactNumber: staffForm.value.contactNumber.trim(),
-      email: staffForm.value.email.trim(),
-      role: staffForm.value.role,
-      status: staffForm.value.status || "Active",
+      contactNumber: contactNumber,
     };
 
-    // Create staff member using the service
-    const response = await staffService.createStaff(staffData);
+    // Create staff account using the server API
+    const response = await api.post("/admin/accounts", payload);
 
-    if (response.error) {
-      throw response.error;
+    if (response.data?.error) {
+      throw new Error(response.data.error);
     }
 
     // Refresh the staff list
     await fetchStaff();
     closeModals();
 
+    // Show success message with generated credentials
+    alert(
+      `Staff member created successfully!\n\nUsername: ${username}\nDefault Password: ${generatedPassword}\n\nPlease share these credentials with the staff member securely.`
+    );
+
     console.log("✅ Staff added successfully:", response.data);
   } catch (error) {
     console.error("Error adding staff:", error);
-    errorMessage.value = "Failed to add staff member. Please try again.";
-    alert("Failed to add staff member. Please try again.");
+    const errorMsg =
+      error.response?.data?.message ||
+      error.message ||
+      "Failed to add staff member. Please try again.";
+    errorMessage.value = errorMsg;
+    alert(errorMsg);
   } finally {
     loading.value = false;
   }
@@ -303,20 +405,18 @@ const updateStaff = async () => {
   loading.value = true;
 
   try {
-    // Prepare staff data for the service
+    // Prepare staff data for the service (use database column names)
     const staffData = {
-      firstName: staffForm.value.firstName.trim(),
-      surname: staffForm.value.surname.trim(),
-      suffix: staffForm.value.suffix.trim() || "",
-      contactNumber: staffForm.value.contactNumber.trim(),
-      email: staffForm.value.email.trim(),
-      role: staffForm.value.role,
-      status: staffForm.value.status || "Active",
+      FirstName: staffForm.value.firstName.trim(),
+      Surname: staffForm.value.surname.trim(),
+      Suffix: staffForm.value.suffix.trim() || "",
+      ContactNumber: staffForm.value.contactNumber.trim(),
+      IsActive: staffForm.value.status === "Active",
     };
 
     // Update staff member using the service
     const response = await staffService.updateStaff(
-      selectedStaff.value.staffId,
+      selectedStaff.value.id,
       staffData
     );
 
@@ -344,24 +444,29 @@ const deleteStaff = async () => {
     return;
   }
 
+  // Double-check system admin protection
+  if (selectedStaff.value.isSystemAdmin) {
+    alert(
+      "Cannot delete the system administrator account. This account is protected."
+    );
+    closeModals();
+    return;
+  }
+
   loading.value = true;
 
   try {
-    // Simulate API delay for demo purposes
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    // Delete staff member using the service
+    const response = await staffService.deleteStaff(selectedStaff.value.id);
 
-    // Remove staff member from the list
-    const staffIndex = staffList.value.findIndex(
-      (staff) => staff.staffId === selectedStaff.value.staffId
-    );
-
-    if (staffIndex !== -1) {
-      staffList.value.splice(staffIndex, 1);
-      closeModals();
-      console.log("✅ Staff deleted successfully");
-    } else {
-      throw new Error("Staff member not found");
+    if (response.error) {
+      throw response.error;
     }
+
+    // Refresh the staff list
+    await fetchStaff();
+    closeModals();
+    console.log("✅ Staff deleted successfully");
   } catch (error) {
     console.error("Error deleting staff:", error);
     errorMessage.value = "Failed to delete staff member. Please try again.";
@@ -378,7 +483,7 @@ const getStatusBadgeVariant = (status) => {
 const getRoleBadgeVariant = (role) => {
   const variants = {
     Nurse: "info",
-    "Barangay Health Worker": "warning",
+    // "Barangay Health Worker": "warning",
     Admin: "dark",
   };
   return variants[role] || "secondary";
@@ -388,6 +493,16 @@ const staffChannel = ref(null);
 
 // Initialize staff data on mount
 onMounted(async () => {
+  // Initialize auth if needed
+  if (!authStore.isInitialized) {
+    await authStore.initializeAuth();
+  }
+
+  if (!authStore.isAuthenticated || !authStore.user) {
+    console.error("User not authenticated");
+    return;
+  }
+
   try {
     await fetchStaff();
     staffChannel.value = realtimeService.subscribeToStaff(handleStaffUpdate);
@@ -406,15 +521,17 @@ const handleStaffUpdate = (payload) => {
   console.log("Real-time staff update:", payload);
   const { eventType, new: newRecord, old: oldRecord } = payload;
 
-  if (eventType === 'INSERT') {
-    staffList.value.unshift(newRecord);
-  } else if (eventType === 'UPDATE') {
-    const index = staffList.value.findIndex(s => s.staffId === newRecord.staffId);
+  if (eventType === "INSERT") {
+    // Re-fetch to get properly formatted data with joins
+    fetchStaff();
+  } else if (eventType === "UPDATE") {
+    const index = staffList.value.findIndex((s) => s.id === newRecord.StaffID);
     if (index !== -1) {
-      staffList.value.splice(index, 1, newRecord);
+      // Re-fetch to get properly formatted data with joins
+      fetchStaff();
     }
-  } else if (eventType === 'DELETE') {
-    const index = staffList.value.findIndex(s => s.staffId === oldRecord.staffId);
+  } else if (eventType === "DELETE") {
+    const index = staffList.value.findIndex((s) => s.id === oldRecord.StaffID);
     if (index !== -1) {
       staffList.value.splice(index, 1);
     }
@@ -459,9 +576,9 @@ const handleStaffUpdate = (payload) => {
             <select class="form-select" v-model="staffForm.role">
               <option value="">All Roles</option>
               <option value="Nurse">Nurse</option>
-              <option value="Barangay Health Worker">
+              <!-- <option value="Barangay Health Worker">
                 Barangay Health Worker
-              </option>
+              </option> -->
               <option value="Admin">Admin</option>
             </select>
           </div>
@@ -593,7 +710,12 @@ const handleStaffUpdate = (payload) => {
                     <button
                       class="btn btn-sm btn-outline-danger"
                       @click="openDeleteModal(staff)"
-                      title="Delete Staff"
+                      :disabled="staff.isSystemAdmin"
+                      :title="
+                        staff.isSystemAdmin
+                          ? 'System administrator cannot be deleted'
+                          : 'Delete Staff'
+                      "
                     >
                       <i class="bi bi-trash"></i>
                     </button>
@@ -694,19 +816,20 @@ const handleStaffUpdate = (payload) => {
                   </div>
                 </div>
                 <div class="col-md-6">
-                  <label class="form-label">Email</label>
+                  <label class="form-label">Email *</label>
                   <input
                     v-model="staffForm.email"
                     type="email"
                     class="form-control"
                     :class="{ 'is-invalid': formErrors.email }"
-                    placeholder="staff@example.com (optional)"
+                    placeholder="staff@example.com"
+                    required
                   />
                   <div v-if="formErrors.email" class="invalid-feedback">
                     {{ formErrors.email }}
                   </div>
                   <small class="form-text text-muted">
-                    Email is optional and for display purposes only
+                    Email is used for staff login credentials
                   </small>
                 </div>
                 <div class="col-md-12">
@@ -718,9 +841,9 @@ const handleStaffUpdate = (payload) => {
                     required
                   >
                     <option value="Nurse">Nurse</option>
-                    <option value="Barangay Health Worker">
+                    <!-- <option value="Barangay Health Worker">
                       Barangay Health Worker
-                    </option>
+                    </option> -->
                     <option value="Admin">Admin</option>
                   </select>
                   <div v-if="formErrors.role" class="invalid-feedback">
@@ -854,14 +977,21 @@ const handleStaffUpdate = (payload) => {
                     required
                   >
                     <option value="Nurse">Nurse</option>
-                    <option value="Barangay Health Worker">
+                    <!-- <option value="Barangay Health Worker">
                       Barangay Health Worker
-                    </option>
+                    </option> -->
                     <option value="Admin">Admin</option>
                   </select>
                   <div v-if="formErrors.role" class="invalid-feedback">
                     {{ formErrors.role }}
                   </div>
+                </div>
+                <div class="col-md-12">
+                  <label class="form-label">Status</label>
+                  <select v-model="staffForm.status" class="form-select">
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
                 </div>
               </div>
             </div>

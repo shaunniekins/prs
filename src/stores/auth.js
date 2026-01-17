@@ -269,7 +269,7 @@ export const useAuthStore = defineStore("auth", () => {
       // Get user data from Users table
       const { data: userData, error: userError } = await supabase
         .from("Users")
-        .select("*, Role(RoleName)")
+        .select("*")
         .eq("Email", data.user.email)
         .single();
 
@@ -279,17 +279,20 @@ export const useAuthStore = defineStore("auth", () => {
 
       user.value = {
         id: userData.UserID,
+        authId: data.user.id, // Keep Supabase Auth UUID for reference
         email: data.user.email,
         firstName: userData.FirstName || "",
         surname: userData.Surname || "",
         fullName:
           `${userData.FirstName || ""} ${userData.Surname || ""}`.trim() ||
+          userData.fullName ||
           data.user.email?.split("@")[0] ||
           "User",
       };
 
-      userRole.value = userData.Role.RoleName;
+      userRole.value = userData.RoleName;
       isAuthenticated.value = true;
+      isInitialized.value = true; // Mark as initialized to prevent router from calling initializeAuth again
 
       // Authentication data is now managed by Supabase sessions
 
@@ -365,7 +368,7 @@ export const useAuthStore = defineStore("auth", () => {
 
       const { data, error } = await supabase
         .from("Users")
-        .select("Role(RoleName)")
+        .select("RoleName")
         .eq("UserID", queryUserId)
         .single();
 
@@ -375,7 +378,7 @@ export const useAuthStore = defineStore("auth", () => {
         throw new Error(`Failed to fetch user role: ${error.message}`);
       }
 
-      const roleName = data?.Role?.RoleName;
+      const roleName = data?.RoleName;
       if (!roleName) {
         console.error("❌ No role found for user:", userId);
         throw new Error("User role not found in database");
@@ -594,64 +597,75 @@ export const useAuthStore = defineStore("auth", () => {
         currentStep = initSteps.gettingUserRole;
 
         // Enhanced role detection with better error handling
+        // Also fetch UserID to ensure consistency with login flow
         let role;
+        let databaseUserId;
+        let userData;
         try {
-          // Get user role by querying the Users table directly with the email from session
-          const { data: userData, error: userError } = await supabase
+          // Get user data by querying the Users table directly with the email from session
+          // Use select("*") for consistency with login flow
+          const { data: userDataResult, error: userError } = await supabase
             .from("Users")
-            .select("Role(RoleName)")
+            .select("*")
             .eq("Email", session.user.email)
             .single();
 
           if (userError) {
-            throw new Error(`Failed to fetch user role: ${userError.message}`);
+            console.error("❌ Error fetching user data:", userError);
+            throw new Error(`Failed to fetch user data: ${userError.message}`);
           }
 
-          const roleName = userData?.Role?.RoleName;
+          userData = userDataResult;
+          const roleName = userData?.RoleName;
           if (!roleName) {
+            console.error("❌ No role found for user:", session.user.email);
             throw new Error("User role not found in database");
           }
 
           role = roleName;
+          databaseUserId = userData?.UserID;
+
+          if (!databaseUserId) {
+            console.error("❌ No UserID found for user:", session.user.email);
+            throw new Error("User ID not found in database");
+          }
+
+          // Enhanced user data with validation - use database UserID for consistency
+          user.value = {
+            id: databaseUserId, // Use database UserID, not Supabase Auth UUID
+            authId: session.user.id, // Keep Supabase Auth UUID for reference
+            email: session.user.email,
+            firstName: userData.FirstName || "",
+            surname: userData.Surname || "",
+            fullName:
+              `${userData.FirstName || ""} ${userData.Surname || ""}`.trim() ||
+              userData.fullName ||
+              session.user.email?.split("@")[0] ||
+              "User",
+          };
         } catch (roleError) {
           console.error(
             "❌ Role detection failed during initialization:",
             roleError
           );
 
-          // Clear the invalid session and redirect to login
-          await supabase.auth.signOut();
-
-          // Enhanced error message based on error type
-          if (roleError.message?.includes("not found")) {
-            throw new Error(
-              "User account found but role not configured. Please contact your administrator."
-            );
-          } else if (roleError.message?.includes("permission")) {
+          // Don't sign out immediately - this might be a temporary error
+          // Only sign out if it's a clear permissions/access issue
+          if (
+            roleError.message?.includes("permission") ||
+            roleError.message?.includes("denied") ||
+            roleError.message?.includes("unauthorized")
+          ) {
+            await supabase.auth.signOut();
             throw new Error(
               "Access denied. Please contact support if you believe this is an error."
             );
-          } else {
-            throw new Error(
-              "Unable to determine your access level. Please log in again."
-            );
           }
-        }
 
-        // Enhanced user data with validation
-        const userMetadata = session.user.user_metadata || {};
-        user.value = {
-          id: session.user.id,
-          email: session.user.email,
-          firstName: userMetadata.firstName || "",
-          surname: userMetadata.surname || "",
-          fullName:
-            `${userMetadata.firstName || ""} ${
-              userMetadata.surname || ""
-            }`.trim() ||
-            session.user.email?.split("@")[0] ||
-            "User",
-        };
+          // For other errors, log but don't sign out - the session might still be valid
+          // Throw the error so the outer catch can handle it appropriately
+          throw roleError;
+        }
 
         userRole.value = role;
         isAuthenticated.value = true;

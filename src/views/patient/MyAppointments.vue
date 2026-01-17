@@ -7,6 +7,7 @@ import { useAuthStore } from "../../stores/auth.js";
 // Composables
 const { showSuccess, showError } = useNotify();
 const { appointments: appointmentOps, patients: patientOps } = useSupabase();
+const authStore = useAuthStore();
 
 // Reactive data
 const loading = ref(false);
@@ -69,6 +70,16 @@ const fetchAppointments = async () => {
   error.value = null;
 
   try {
+    // Ensure auth is initialized before fetching data
+    if (!authStore.isInitialized) {
+      await authStore.initializeAuth();
+    }
+
+    // Check if user is authenticated
+    if (!authStore.isAuthenticated || !authStore.user) {
+      throw new Error("Please log in to view appointments");
+    }
+
     const data = await appointmentOps.getMyAppointments();
     appointmentsList.value = data || [];
   } catch (err) {

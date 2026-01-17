@@ -3,6 +3,10 @@ import { ref, computed, onMounted, onUnmounted } from "vue";
 import { notificationService } from "../../services/notificationService.js";
 import { useRealtime } from "../../composables/useRealtime.js";
 import { useNotify } from "../../composables/useNotify.js";
+import { useAuthStore } from "../../stores/auth.js";
+
+// Auth store
+const authStore = useAuthStore();
 
 // Reactive data
 const notifications = ref([]);
@@ -42,8 +46,15 @@ const setupRealtimeSubscription = () => {
 
 // Lifecycle hooks
 onMounted(async () => {
-  await fetchNotifications();
-  setupRealtimeSubscription();
+  // Initialize auth if needed
+  if (!authStore.isInitialized) {
+    await authStore.initializeAuth();
+  }
+
+  if (authStore.isAuthenticated && authStore.user) {
+    await fetchNotifications();
+    setupRealtimeSubscription();
+  }
 });
 
 onUnmounted(() => {

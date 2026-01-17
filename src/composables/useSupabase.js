@@ -90,19 +90,35 @@ export const useSupabase = () => {
     // Wait for authentication to be initialized if it's still loading
     let attempts = 0;
     const maxAttempts = 10;
+    const authStore = useAuthStore();
 
-    while (!isAuthenticated.value && attempts < maxAttempts) {
-      await useAuthStore().initializeAuth();
+    while (
+      (!authStore.isAuthenticated || !authStore.user) &&
+      attempts < maxAttempts
+    ) {
+      await authStore.initializeAuth();
       await new Promise((resolve) => setTimeout(resolve, 200));
       attempts++;
     }
 
-    if (!isAuthenticated.value) {
+    if (!authStore.isAuthenticated) {
       throw new Error("Authentication required");
+    }
+
+    if (!authStore.user || !authStore.user.id) {
+      throw new Error("User data not available. Please try logging in again.");
     }
   };
 
   const requireRole = async (roles) => {
+    // Ensure auth is initialized and user data is available
+    const authStore = useAuthStore();
+
+    // Initialize auth if not already done
+    if (!authStore.isAuthenticated || !authStore.user) {
+      await authStore.initializeAuth();
+    }
+
     // Check if we have a valid session
     const {
       data: { session },
@@ -113,8 +129,18 @@ export const useSupabase = () => {
       throw new Error("Authentication required");
     }
 
+    // Ensure user data is available - use authStore.user directly
+    if (!authStore.user || !authStore.user.id) {
+      // Try to reinitialize auth one more time
+      await authStore.initializeAuth(true);
+      if (!authStore.user || !authStore.user.id) {
+        throw new Error(
+          "User data not available. Please try logging in again."
+        );
+      }
+    }
+
     // Get user role using auth store
-    const authStore = useAuthStore();
     let role;
     try {
       role = await authStore.getUserRole(session.user.id);
@@ -139,19 +165,19 @@ export const useSupabase = () => {
   const patientOps = {
     // Get all patients (admin/staff only)
     async getAllPatients() {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase.from("Patients").select(
           `
             *,
-            Users!UserID(Email)
+            Users!UserID(Email, fullName)
           `
         );
 
         if (error) {
           throw error;
         }
-        return data;
+        return data || [];
       });
     },
 
@@ -176,12 +202,13 @@ export const useSupabase = () => {
 
     // Get current user's patients (patients only)
     async getMyPatients() {
-      requireRole(["patient"]);
+      await requireRole(["patient"]);
       return withLoading(async () => {
+        const authStore = useAuthStore();
         const { data, error } = await supabase
           .from("Patients")
           .select("*")
-          .eq("UserID", user.value.id);
+          .eq("UserID", authStore.user.id);
 
         if (error) {
           throw error;
@@ -192,14 +219,15 @@ export const useSupabase = () => {
 
     // Create new patient
     async createPatient(patientData) {
-      requireAuth();
+      await requireAuth();
       return withLoading(async () => {
+        const authStore = useAuthStore();
         const { data, error } = await supabase
           .from("Patients")
           .insert([
             {
               ...patientData,
-              UserID: user.value.id,
+              UserID: authStore.user.id,
               created_at: new Date().toISOString(),
             },
           ])
@@ -230,7 +258,7 @@ export const useSupabase = () => {
 
     // Delete patient
     async deletePatient(id) {
-      requireRole(["admin"]);
+      await requireRole(["admin"]);
       return withLoading(async () => {
         const { error } = await supabase
           .from("Patients")
@@ -247,7 +275,7 @@ export const useSupabase = () => {
   const appointmentOps = {
     // Get all appointments (staff only)
     async getAllAppointments() {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Appointment")
@@ -258,7 +286,7 @@ export const useSupabase = () => {
               *,
               Users!UserID(fullName)
             ),
-            Staff!fk_appointment_scheduledby(
+            Staff!ScheduledBy(
               *,
               Users!UserID(fullName)
             )
@@ -267,70 +295,142 @@ export const useSupabase = () => {
           .order("DateTime", { ascending: true });
 
         if (error) throw error;
-        return data;
+        return data || [];
       });
     },
 
     // Get current user's appointments (patients)
     async getMyAppointments() {
-      requireRole(["patient"]);
+      await requireRole(["patient"]);
       return withLoading(async () => {
+        // Get fresh reference to auth store
+        const authStore = useAuthStore();
+
+        if (!authStore.isInitialized) {
+          await authStore.initializeAuth();
+        }
+
+        const currentUser = authStore.user;
+
+        if (!currentUser || !currentUser.id) {
+          throw new Error("User not authenticated");
+        }
+
+        // First get the patient record for the current user
+        const { data: patientData, error: patientError } = await supabase
+          .from("Patients")
+          .select("PatientID")
+          .eq("UserID", currentUser.id)
+          .single();
+
+        if (patientError) {
+          if (patientError.code === "PGRST116") {
+            console.warn(
+              "⚠️ No patient record found for user:",
+              currentUser.id
+            );
+            return [];
+          }
+          throw patientError;
+        }
+
         const { data, error } = await supabase
           .from("Appointment")
           .select(
             `
             *,
-            Patients!inner(*),
-            Staff!inner(
+            Patients(*),
+            Staff!ScheduledBy(
               *,
               Users!UserID(fullName)
             )
           `
           )
-          .eq("Patients.UserID", user.value.id)
+          .eq("PatientID", patientData.PatientID)
           .order("DateTime", { ascending: true });
 
         if (error) {
           throw error;
         }
-        return data;
+        return data || [];
       });
     },
 
     // Get staff appointments (nurses)
     async getMyStaffAppointments() {
-      requireRole(["nurse"]);
+      await requireRole(["nurse"]);
       return withLoading(async () => {
+        // Get fresh reference to auth store
+        const authStore = useAuthStore();
+
+        // Wait for auth to be initialized if it's not yet
+        if (!authStore.isInitialized) {
+          await authStore.initializeAuth();
+        }
+
+        // Get user from auth store
+        const currentUser = authStore.user;
+
+        // Ensure user is properly loaded
+        if (!currentUser || !currentUser.id) {
+          console.error("❌ User not loaded. Auth state:", {
+            isAuthenticated: authStore.isAuthenticated,
+            isInitialized: authStore.isInitialized,
+            user: currentUser,
+          });
+          throw new Error("User not authenticated or user data not loaded");
+        }
+
+        // First, get the Staff record for the current user
+        const { data: staffData, error: staffError } = await supabase
+          .from("Staff")
+          .select("StaffID")
+          .eq("UserID", currentUser.id)
+          .single();
+
+        if (staffError) {
+          console.error("❌ Error fetching staff record:", staffError);
+          // If no staff record found, return empty array instead of throwing
+          if (staffError.code === "PGRST116") {
+            console.warn("⚠️ No staff record found for user:", currentUser.id);
+            return [];
+          }
+          throw staffError;
+        }
+
+        // Now fetch appointments scheduled by this staff member
+        // The Appointment table uses "ScheduledBy" column which references Staff.StaffID
         const { data, error } = await supabase
           .from("Appointment")
           .select(
             `
             *,
-            Patients!inner(
+            Patients(
               *,
               Users!UserID(fullName)
             ),
-            Staff!inner(*)
+            Staff!ScheduledBy(*)
           `
           )
-          .eq("Staff.UserID", user.value.id)
+          .eq("ScheduledBy", staffData.StaffID)
           .order("DateTime", { ascending: true });
 
         if (error) throw error;
-        return data;
+        return data || [];
       });
     },
 
     // Create appointment
     async createAppointment(appointmentData) {
-      requireAuth();
+      await requireAuth();
       return withLoading(async () => {
+        const authStore = useAuthStore();
         const { data, error } = await supabase
           .from("Appointment")
           .insert([
             {
               ...appointmentData,
-              ScheduledBy: user.value.id,
+              ScheduledBy: authStore.user.id,
               created_at: new Date().toISOString(),
             },
           ])
@@ -376,15 +476,13 @@ export const useSupabase = () => {
   // Staff operations (admin only)
   const staffOps = {
     async getAllStaff() {
-      requireRole(["admin"]);
+      await requireRole(["admin"]);
       return withLoading(async () => {
         const { data, error } = await supabase.from("Staff").select(
           `
             *,
 
-            Users!UserID(fullName, Email),
-
-            Role(RoleName)
+            Users!UserID(fullName, Email, RoleName)
           `
         );
 
@@ -394,7 +492,7 @@ export const useSupabase = () => {
     },
 
     async createStaff(staffData) {
-      requireRole(["admin"]);
+      await requireRole(["admin"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Staff")
@@ -413,7 +511,7 @@ export const useSupabase = () => {
     },
 
     async updateStaff(id, staffData) {
-      requireRole(["admin"]);
+      await requireRole(["admin"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Staff")
@@ -430,7 +528,7 @@ export const useSupabase = () => {
     },
 
     async deleteStaff(id) {
-      requireRole(["admin"]);
+      await requireRole(["admin"]);
       return withLoading(async () => {
         const { error } = await supabase
           .from("Staff")
@@ -446,7 +544,7 @@ export const useSupabase = () => {
   // Notification operations
   const notificationOps = {
     async getAllNotifications() {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Notification")
@@ -460,17 +558,18 @@ export const useSupabase = () => {
           .order("CreatedAt", { ascending: false });
 
         if (error) throw error;
-        return data;
+        return data || [];
       });
     },
 
     async getMyNotifications() {
-      requireAuth();
+      await requireAuth();
       return withLoading(async () => {
+        const authStore = useAuthStore();
         const { data, error } = await supabase
           .from("Notification")
           .select("*")
-          .eq("UserID", user.value.id)
+          .eq("UserID", authStore.user.id)
           .order("CreatedAt", { ascending: false });
 
         if (error) throw error;
@@ -479,14 +578,15 @@ export const useSupabase = () => {
     },
 
     async createNotification(notificationData) {
-      requireAuth();
+      await requireAuth();
       return withLoading(async () => {
+        const authStore = useAuthStore();
         const { data, error } = await supabase
           .from("Notification")
           .insert([
             {
               ...notificationData,
-              UserID: notificationData.UserID || user.value.id,
+              UserID: notificationData.UserID || authStore.user.id,
               created_at: new Date().toISOString(),
             },
           ])
@@ -515,14 +615,15 @@ export const useSupabase = () => {
     },
 
     async markAllAsRead() {
-      requireAuth();
+      await requireAuth();
       return withLoading(async () => {
+        const authStore = useAuthStore();
         const { error } = await supabase
           .from("Notification")
           .update({
             IsRead: true,
           })
-          .eq("UserID", user.value.id)
+          .eq("UserID", authStore.user.id)
           .eq("IsRead", false);
 
         if (error) throw error;
@@ -560,7 +661,7 @@ export const useSupabase = () => {
 
     // Send appointment reminder
     async sendAppointmentReminder(appointmentId, patientId, message) {
-      requireAuth();
+      await requireAuth();
       return withLoading(async () => {
         const notificationData = {
           UserID: patientId,
@@ -585,7 +686,7 @@ export const useSupabase = () => {
 
     // Send system alert
     async sendSystemAlert(userId, title, message, priority = "normal") {
-      requireAuth();
+      await requireAuth();
       return withLoading(async () => {
         const notificationData = {
           UserID: userId,
@@ -611,7 +712,7 @@ export const useSupabase = () => {
   // Medical Record operations (admin and nurse only)
   const medicalRecordOps = {
     async getAllMedicalRecords() {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase.from("MedicalRecord").select(
           `
@@ -658,14 +759,15 @@ export const useSupabase = () => {
     },
 
     async createMedicalRecord(recordData) {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
+        const authStore = useAuthStore();
         const { data, error } = await supabase
           .from("MedicalRecord")
           .insert([
             {
               ...recordData,
-              EnteredBy: user.value.id,
+              EnteredBy: authStore.user.id,
               created_at: new Date().toISOString(),
             },
           ])
@@ -678,7 +780,7 @@ export const useSupabase = () => {
     },
 
     async updateMedicalRecord(id, recordData) {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("MedicalRecord")
@@ -695,7 +797,7 @@ export const useSupabase = () => {
     },
 
     async deleteMedicalRecord(id) {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { error } = await supabase
           .from("MedicalRecord")
@@ -736,7 +838,7 @@ export const useSupabase = () => {
     },
 
     async getMedicalRecordsByStaff(staffId) {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("MedicalRecord")
@@ -762,7 +864,7 @@ export const useSupabase = () => {
   // Reports operations (admin only)
   const reportOps = {
     async getAllReports() {
-      requireRole(["admin"]);
+      await requireRole(["admin"]);
       return withLoading(async () => {
         const { data, error } = await supabase.from("Reports").select(
           `
@@ -801,14 +903,15 @@ export const useSupabase = () => {
     },
 
     async createReport(reportData) {
-      requireRole(["admin"]);
+      await requireRole(["admin"]);
       return withLoading(async () => {
+        const authStore = useAuthStore();
         const { data, error } = await supabase
           .from("Reports")
           .insert([
             {
               ...reportData,
-              GeneratedBy: user.value.id,
+              GeneratedBy: authStore.user.id,
               created_at: new Date().toISOString(),
             },
           ])
@@ -821,7 +924,7 @@ export const useSupabase = () => {
     },
 
     async updateReport(id, reportData) {
-      requireRole(["admin"]);
+      await requireRole(["admin"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Reports")
@@ -838,7 +941,7 @@ export const useSupabase = () => {
     },
 
     async deleteReport(id) {
-      requireRole(["admin"]);
+      await requireRole(["admin"]);
       return withLoading(async () => {
         const { error } = await supabase
           .from("Reports")
@@ -851,7 +954,7 @@ export const useSupabase = () => {
     },
 
     async getReportsByType(reportType) {
-      requireRole(["admin"]);
+      await requireRole(["admin"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Reports")
@@ -872,7 +975,7 @@ export const useSupabase = () => {
     },
 
     async getReportsByDateRange(startDate, endDate) {
-      requireRole(["admin"]);
+      await requireRole(["admin"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Reports")
@@ -895,7 +998,7 @@ export const useSupabase = () => {
 
     // Analytics data operations
     async getOverviewStats(startDate, endDate) {
-      requireRole(["admin"]);
+      await requireRole(["admin"]);
       return withLoading(async () => {
         // Get patient count
         const { count: patientsCount, error: patientsError } = await supabase
@@ -933,7 +1036,7 @@ export const useSupabase = () => {
     },
 
     async getAppointmentAnalytics(startDate, endDate) {
-      requireRole(["admin"]);
+      await requireRole(["admin"]);
       return withLoading(async () => {
         // Get appointments by status
         const { data: statusData, error: statusError } = await supabase
@@ -1016,7 +1119,7 @@ export const useSupabase = () => {
     },
 
     async getPatientAnalytics(startDate, endDate) {
-      requireRole(["admin"]);
+      await requireRole(["admin"]);
       return withLoading(async () => {
         // Get patients by gender (without date filtering since created_at column may not exist)
         const { data: genderData, error: genderError } = await supabase
@@ -1049,7 +1152,7 @@ export const useSupabase = () => {
     },
 
     async getStaffAnalytics(startDate, endDate) {
-      requireRole(["admin"]);
+      await requireRole(["admin"]);
       return withLoading(async () => {
         // Get staff workload data (appointments handled by staff)
         const { data: workloadData, error: workloadError } = await supabase
@@ -1147,7 +1250,7 @@ export const useSupabase = () => {
   // Treatment operations (admin and nurse only)
   const treatmentOps = {
     async getAllTreatments() {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase.from("Treatment").select("*");
 
@@ -1170,7 +1273,7 @@ export const useSupabase = () => {
     },
 
     async createTreatment(treatmentData) {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Treatment")
@@ -1189,7 +1292,7 @@ export const useSupabase = () => {
     },
 
     async updateTreatment(id, treatmentData) {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Treatment")
@@ -1206,7 +1309,7 @@ export const useSupabase = () => {
     },
 
     async deleteTreatment(id) {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { error } = await supabase
           .from("Treatment")
@@ -1219,7 +1322,7 @@ export const useSupabase = () => {
     },
 
     async getTreatmentsByCategory(category) {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Treatment")
@@ -1235,7 +1338,7 @@ export const useSupabase = () => {
   // Diagnosis operations (admin and nurse only)
   const diagnosisOps = {
     async getAllDiagnoses() {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase.from("Diagnosis").select("*");
 
@@ -1258,7 +1361,7 @@ export const useSupabase = () => {
     },
 
     async createDiagnosis(diagnosisData) {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Diagnosis")
@@ -1277,7 +1380,7 @@ export const useSupabase = () => {
     },
 
     async updateDiagnosis(id, diagnosisData) {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Diagnosis")
@@ -1294,7 +1397,7 @@ export const useSupabase = () => {
     },
 
     async deleteDiagnosis(id) {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { error } = await supabase
           .from("Diagnosis")
@@ -1307,7 +1410,7 @@ export const useSupabase = () => {
     },
 
     async getDiagnosesByCategory(category) {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Diagnosis")
@@ -1323,7 +1426,7 @@ export const useSupabase = () => {
   // Consultation Notes operations (admin and nurse only)
   const consultationNotes = {
     async getAllConsultationNotes() {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Notes")
@@ -1349,7 +1452,7 @@ export const useSupabase = () => {
     },
 
     async createConsultationNote(noteData) {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Notes")
@@ -1369,7 +1472,7 @@ export const useSupabase = () => {
     },
 
     async updateConsultationNote(id, noteData) {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Notes")
@@ -1387,7 +1490,7 @@ export const useSupabase = () => {
     },
 
     async deleteConsultationNote(id) {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { error } = await supabase
           .from("Notes")
@@ -1413,7 +1516,7 @@ export const useSupabase = () => {
     },
 
     async getConsultationNotesByStaff(staffId) {
-      requireRole(["admin", "nurse"]);
+      await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Notes")
@@ -1526,7 +1629,7 @@ export const useSupabase = () => {
   // User management operations (admin only)
   const userOps = {
     async getAllUsers() {
-      requireRole(["admin"]);
+      await requireRole(["admin"]);
       return withLoading(async () => {
         const { data, error } = await supabase.from("Users").select(
           `
@@ -1559,7 +1662,7 @@ export const useSupabase = () => {
     },
 
     async createUser(userData) {
-      requireRole(["admin"]);
+      await requireRole(["admin"]);
       return withLoading(async () => {
         // First create the auth user
         const { data: authData, error: authError } =
@@ -1596,7 +1699,7 @@ export const useSupabase = () => {
     },
 
     async updateUser(id, userData) {
-      requireRole(["admin"]);
+      await requireRole(["admin"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Users")
@@ -1613,7 +1716,7 @@ export const useSupabase = () => {
     },
 
     async deleteUser(id) {
-      requireRole(["admin"]);
+      await requireRole(["admin"]);
       return withLoading(async () => {
         // First delete from Users table
         const { error: userError } = await supabase
@@ -1632,7 +1735,7 @@ export const useSupabase = () => {
     },
 
     async getUsersByRole(roleId) {
-      requireRole(["admin"]);
+      await requireRole(["admin"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Users")
@@ -1651,7 +1754,7 @@ export const useSupabase = () => {
 
     // Approve appointment request
     async approveAppointmentRequest(appointmentId) {
-      requireRole(["nurse"]);
+      await requireRole(["nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Appointment")
@@ -1669,7 +1772,7 @@ export const useSupabase = () => {
 
     // Deny appointment request
     async denyAppointmentRequest(appointmentId, reason) {
-      requireRole(["nurse"]);
+      await requireRole(["nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Appointment")
@@ -1688,21 +1791,18 @@ export const useSupabase = () => {
 
     // Get pending appointment requests for nurse
     async getPendingAppointmentRequests() {
-      requireRole(["nurse"]);
+      await requireRole(["nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Appointment")
           .select(
             `
             *,
-            Patients!inner(
-
+            Patients(
               *,
-
               Users!UserID(fullName, Email)
-
             ),
-            Staff!inner(
+            Staff!ScheduledBy(
               *,
               Users!UserID(fullName)
             )
@@ -1712,24 +1812,24 @@ export const useSupabase = () => {
           .order("DateTime", { ascending: true });
 
         if (error) throw error;
-        return data;
+        return data || [];
       });
     },
 
     // Get all appointment requests for nurse
     async getAllAppointmentRequests() {
-      requireRole(["nurse"]);
+      await requireRole(["nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Appointment")
           .select(
             `
             *,
-            Patients!inner(
+            Patients(
               *,
-              Users!UserID(fullName, email)
+              Users!UserID(fullName, Email)
             ),
-            Staff!inner(
+            Staff!ScheduledBy(
               *,
               Users!UserID(fullName)
             )
@@ -1738,21 +1838,22 @@ export const useSupabase = () => {
           .order("DateTime", { ascending: true });
 
         if (error) throw error;
-        return data;
+        return data || [];
       });
     },
 
     // Create new appointment request
     async createAppointmentRequest(requestData) {
-      requireAuth();
+      await requireAuth();
       return withLoading(async () => {
+        const authStore = useAuthStore();
         const { data, error } = await supabase
           .from("Appointment")
           .insert([
             {
               ...requestData,
               Status: "Pending",
-              ScheduledBy: user.value.id,
+              ScheduledBy: authStore.user.id,
               created_at: new Date().toISOString(),
             },
           ])
@@ -1766,7 +1867,7 @@ export const useSupabase = () => {
 
     // Update appointment request
     async updateAppointmentRequest(appointmentId, requestData) {
-      requireRole(["nurse"]);
+      await requireRole(["nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase
           .from("Appointment")
@@ -1783,8 +1884,8 @@ export const useSupabase = () => {
     },
 
     // Subscribe to appointment requests changes
-    subscribeToAppointmentRequests(callback) {
-      requireRole(["nurse"]);
+    async subscribeToAppointmentRequests(callback) {
+      await requireRole(["nurse"]);
       const subscription = supabase
         .channel("appointment_requests_changes")
         .on(
@@ -1802,8 +1903,8 @@ export const useSupabase = () => {
     },
 
     // Subscribe to patient changes
-    subscribeToPatients(callback) {
-      requireRole(["admin", "nurse"]);
+    async subscribeToPatients(callback) {
+      await requireRole(["admin", "nurse"]);
       const subscription = supabase
         .channel("patients_changes")
         .on(
