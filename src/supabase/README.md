@@ -159,11 +159,45 @@ realtimeService.unsubscribe(subscription);
 
 ```
 src/supabase/
-├── complete-schema.sql      # Complete database schema (run this)
-├── setup-verification.sql   # Verify setup and seed data
-├── seed-auth-users.js       # Node.js script to seed test users
-└── README.md                # This file
+├── complete-schema.sql               # Complete database schema (run this for new setups)
+├── migrate-treatment-diagnosis.sql   # Migration for Treatment/Diagnosis extended columns
+├── migrate-notes.sql                 # Migration for Notes (Consultation Notes) extended columns
+├── setup-verification.sql            # Verify setup and seed data
+├── seed-auth-users.js                # Node.js script to seed test users
+├── check-data.js                     # Script to check data in the database
+└── README.md                         # This file
 ```
+
+## Migrations
+
+### Treatment & Diagnosis Extended Fields
+
+If your database was created before the extended Treatment/Diagnosis features, run the migration:
+
+1. Go to your Supabase Dashboard
+2. Navigate to **SQL Editor**
+3. Create a new query
+4. Copy and paste the contents of `src/supabase/migrate-treatment-diagnosis.sql`
+5. Run the query
+
+This adds extended columns for:
+
+- **Treatment**: `category`, `medications` (JSONB), `instructions`, `contraindications`, `sideEffects`, `status`
+- **Diagnosis**: `category`, `symptoms`, `riskFactors`, `diagnosticCriteria`, `complications`, `status`
+
+### Consultation Notes Extended Fields
+
+If your database was created before the extended Consultation Notes features, run the migration:
+
+1. Go to your Supabase Dashboard
+2. Navigate to **SQL Editor**
+3. Create a new query
+4. Copy and paste the contents of `src/supabase/migrate-notes.sql`
+5. Run the query
+
+This adds extended columns for:
+
+- **Notes**: `PatientName`, `StaffName`, `AppointmentID`, `Type`, `Subject`, `VitalSigns` (JSONB), `Assessment`, `Plan`, `FollowUp`, `Status`
 
 ## Security Notes
 

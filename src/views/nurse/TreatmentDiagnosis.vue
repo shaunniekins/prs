@@ -24,8 +24,11 @@ const search = ref("");
 const activeTab = ref("treatments");
 const showAddModal = ref(false);
 const showEditModal = ref(false);
+const isViewMode = ref(false);
 const selectedItem = ref(null);
 const error = ref(null);
+const showDeleteConfirm = ref(false);
+const itemToDelete = ref(null);
 
 // Form data
 const treatmentForm = ref({
@@ -62,7 +65,7 @@ const filteredTreatments = computed(() => {
     (treatment) =>
       treatment.name?.toLowerCase().includes(search.value.toLowerCase()) ||
       treatment.category?.toLowerCase().includes(search.value.toLowerCase()) ||
-      treatment.description?.toLowerCase().includes(search.value.toLowerCase())
+      treatment.description?.toLowerCase().includes(search.value.toLowerCase()),
   );
 });
 
@@ -72,7 +75,7 @@ const filteredDiagnoses = computed(() => {
     (diagnosis) =>
       diagnosis.name?.toLowerCase().includes(search.value.toLowerCase()) ||
       diagnosis.category?.toLowerCase().includes(search.value.toLowerCase()) ||
-      diagnosis.code?.toLowerCase().includes(search.value.toLowerCase())
+      diagnosis.code?.toLowerCase().includes(search.value.toLowerCase()),
   );
 });
 
@@ -196,6 +199,7 @@ const resetDiagnosisForm = () => {
 
 const openAddModal = (type) => {
   selectedItem.value = null;
+  isViewMode.value = false;
   if (type === "treatment") {
     resetTreatmentForm();
     showAddModal.value = "treatment";
@@ -205,8 +209,9 @@ const openAddModal = (type) => {
   }
 };
 
-const openEditModal = (item, type) => {
+const openEditModal = (item, type, readonly = false) => {
   selectedItem.value = item;
+  isViewMode.value = readonly;
   if (type === "treatment") {
     treatmentForm.value = { ...item };
     showEditModal.value = "treatment";
@@ -216,12 +221,55 @@ const openEditModal = (item, type) => {
   }
 };
 
+const openViewModal = (item, type) => {
+  openEditModal(item, type, true);
+};
+
+const switchToEditMode = () => {
+  isViewMode.value = false;
+};
+
 const closeModals = () => {
   showAddModal.value = false;
   showEditModal.value = false;
+  isViewMode.value = false;
   selectedItem.value = null;
   resetTreatmentForm();
   resetDiagnosisForm();
+};
+
+// Delete confirmation
+const confirmDelete = (item, type) => {
+  itemToDelete.value = { ...item, type };
+  showDeleteConfirm.value = true;
+};
+
+const cancelDelete = () => {
+  showDeleteConfirm.value = false;
+  itemToDelete.value = null;
+};
+
+const executeDelete = async () => {
+  if (!itemToDelete.value) return;
+
+  loading.value = true;
+  try {
+    if (itemToDelete.value.type === "treatment") {
+      await treatmentOps.deleteTreatment(itemToDelete.value.TreatmentID);
+    } else {
+      await diagnosisOps.deleteDiagnosis(itemToDelete.value.DiagnosisID);
+    }
+
+    // Refresh data
+    await fetchData();
+    showDeleteConfirm.value = false;
+    itemToDelete.value = null;
+  } catch (err) {
+    console.error("Error deleting item:", err);
+    error.value = err.message || "Failed to delete item";
+  } finally {
+    loading.value = false;
+  }
 };
 
 // CRUD Operations
@@ -232,7 +280,7 @@ const addTreatment = async () => {
 
   loading.value = true;
   try {
-    await treatmentOps.addTreatment({
+    await treatmentOps.createTreatment({
       name: treatmentForm.value.name,
       description: treatmentForm.value.description,
       category: treatmentForm.value.category,
@@ -261,7 +309,7 @@ const addDiagnosis = async () => {
 
   loading.value = true;
   try {
-    await diagnosisOps.addDiagnosis({
+    await diagnosisOps.createDiagnosis({
       name: diagnosisForm.value.name,
       code: diagnosisForm.value.code,
       description: diagnosisForm.value.description,
@@ -392,7 +440,10 @@ const clearError = () => {
 <template>
   <div class="treatment-diagnosis">
     <!-- Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
+    <div
+      class="d-flex justify-content-between align-items-center mb-4 position-relative"
+      style="z-index: 100"
+    >
       <div>
         <h1 class="mb-2 animate-fade-in-left">Treatment & Diagnosis</h1>
         <p class="text-muted mb-0 animate-fade-in-left animation-delay-100">
@@ -410,12 +461,12 @@ const clearError = () => {
             <i class="bi bi-plus-circle me-2"></i>
             Add New
           </button>
-          <ul class="dropdown-menu">
+          <ul class="dropdown-menu dropdown-menu-end">
             <li>
               <a
                 class="dropdown-item"
                 href="#"
-                @click="openAddModal('treatment')"
+                @click.prevent="openAddModal('treatment')"
                 ><i class="bi bi-capsule me-2"></i>Add Treatment</a
               >
             </li>
@@ -423,7 +474,7 @@ const clearError = () => {
               <a
                 class="dropdown-item"
                 href="#"
-                @click="openAddModal('diagnosis')"
+                @click.prevent="openAddModal('diagnosis')"
                 ><i class="bi bi-clipboard-pulse me-2"></i>Add Diagnosis</a
               >
             </li>
@@ -542,7 +593,7 @@ const clearError = () => {
                     <span
                       class="badge"
                       :class="`bg-${getCategoryBadgeVariant(
-                        treatment.category
+                        treatment.category,
                       )}`"
                     >
                       {{ treatment.category }}
@@ -589,6 +640,7 @@ const clearError = () => {
                     <div class="btn-group" role="group">
                       <button
                         class="btn btn-sm btn-outline-info"
+                        @click="openViewModal(treatment, 'treatment')"
                         title="View Details"
                       >
                         <i class="bi bi-eye"></i>
@@ -600,6 +652,14 @@ const clearError = () => {
                         title="Edit"
                       >
                         <i class="bi bi-pencil"></i>
+                      </button>
+                      <button
+                        v-if="canEdit"
+                        class="btn btn-sm btn-outline-danger"
+                        @click="confirmDelete(treatment, 'treatment')"
+                        title="Delete"
+                      >
+                        <i class="bi bi-trash"></i>
                       </button>
                     </div>
                   </td>
@@ -691,7 +751,7 @@ const clearError = () => {
                     <span
                       class="badge"
                       :class="`bg-${getCategoryBadgeVariant(
-                        diagnosis.category
+                        diagnosis.category,
                       )}`"
                     >
                       {{ diagnosis.category }}
@@ -716,6 +776,7 @@ const clearError = () => {
                     <div class="btn-group" role="group">
                       <button
                         class="btn btn-sm btn-outline-info"
+                        @click="openViewModal(diagnosis, 'diagnosis')"
                         title="View Details"
                       >
                         <i class="bi bi-eye"></i>
@@ -727,6 +788,14 @@ const clearError = () => {
                         title="Edit"
                       >
                         <i class="bi bi-pencil"></i>
+                      </button>
+                      <button
+                        v-if="canEdit"
+                        class="btn btn-sm btn-outline-danger"
+                        @click="confirmDelete(diagnosis, 'diagnosis')"
+                        title="Delete"
+                      >
+                        <i class="bi bi-trash"></i>
                       </button>
                     </div>
                   </td>
@@ -907,6 +976,13 @@ const clearError = () => {
                     rows="2"
                   ></textarea>
                 </div>
+                <div class="col-md-6">
+                  <label class="form-label">Status</label>
+                  <select v-model="treatmentForm.status" class="form-select">
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
               </div>
             </div>
             <div class="modal-footer">
@@ -928,7 +1004,7 @@ const clearError = () => {
       </div>
     </div>
 
-    <!-- Edit Treatment Modal -->
+    <!-- Edit/View Treatment Modal -->
     <div
       class="modal fade"
       :class="{ show: showEditModal === 'treatment' }"
@@ -936,14 +1012,23 @@ const clearError = () => {
     >
       <div class="modal-dialog modal-lg">
         <div class="modal-content">
-          <div class="modal-header">
+          <div
+            class="modal-header"
+            :class="isViewMode ? 'bg-info text-white' : ''"
+          >
             <h5 class="modal-title">
-              <i class="bi bi-pencil me-2"></i>
-              Edit Treatment Protocol
+              <i
+                :class="isViewMode ? 'bi bi-eye me-2' : 'bi bi-pencil me-2'"
+              ></i>
+              {{
+                isViewMode
+                  ? "View Treatment Details"
+                  : "Edit Treatment Protocol"
+              }}
             </h5>
             <button
               type="button"
-              class="btn-close"
+              :class="isViewMode ? 'btn-close btn-close-white' : 'btn-close'"
               @click="closeModals"
             ></button>
           </div>
@@ -957,6 +1042,8 @@ const clearError = () => {
                     type="text"
                     class="form-control"
                     :class="{ 'is-invalid': treatmentErrors.name }"
+                    :readonly="isViewMode"
+                    :disabled="isViewMode"
                     required
                   />
                   <div v-if="treatmentErrors.name" class="invalid-feedback">
@@ -969,6 +1056,7 @@ const clearError = () => {
                     v-model="treatmentForm.category"
                     class="form-select"
                     :class="{ 'is-invalid': treatmentErrors.category }"
+                    :disabled="isViewMode"
                     required
                   >
                     <option value="General">General</option>
@@ -986,6 +1074,8 @@ const clearError = () => {
                     v-model="treatmentForm.description"
                     class="form-control"
                     :class="{ 'is-invalid': treatmentErrors.description }"
+                    :readonly="isViewMode"
+                    :disabled="isViewMode"
                     rows="2"
                     required
                   ></textarea>
@@ -1009,20 +1099,27 @@ const clearError = () => {
                         type="text"
                         class="form-control"
                         placeholder="Medication name"
+                        :readonly="isViewMode"
+                        :disabled="isViewMode"
                       />
                       <input
                         v-model="med.dosage"
                         type="text"
                         class="form-control"
                         placeholder="Dosage"
+                        :readonly="isViewMode"
+                        :disabled="isViewMode"
                       />
                       <input
                         v-model="med.frequency"
                         type="text"
                         class="form-control"
                         placeholder="Frequency"
+                        :readonly="isViewMode"
+                        :disabled="isViewMode"
                       />
                       <button
+                        v-if="!isViewMode"
                         type="button"
                         class="btn btn-outline-danger"
                         @click="removeMedication(index)"
@@ -1031,6 +1128,7 @@ const clearError = () => {
                       </button>
                     </div>
                     <button
+                      v-if="!isViewMode"
                       type="button"
                       class="btn btn-outline-primary btn-sm"
                       @click="addMedication"
@@ -1038,6 +1136,16 @@ const clearError = () => {
                       <i class="bi bi-plus me-1"></i>
                       Add Medication
                     </button>
+                    <p
+                      v-if="
+                        isViewMode &&
+                        (!treatmentForm.medications ||
+                          treatmentForm.medications.length === 0)
+                      "
+                      class="text-muted mb-0"
+                    >
+                      No medications specified
+                    </p>
                   </div>
                 </div>
                 <div class="col-md-12">
@@ -1045,6 +1153,8 @@ const clearError = () => {
                   <textarea
                     v-model="treatmentForm.instructions"
                     class="form-control"
+                    :readonly="isViewMode"
+                    :disabled="isViewMode"
                     rows="3"
                   ></textarea>
                 </div>
@@ -1053,6 +1163,8 @@ const clearError = () => {
                   <textarea
                     v-model="treatmentForm.contraindications"
                     class="form-control"
+                    :readonly="isViewMode"
+                    :disabled="isViewMode"
                     rows="2"
                   ></textarea>
                 </div>
@@ -1061,8 +1173,21 @@ const clearError = () => {
                   <textarea
                     v-model="treatmentForm.sideEffects"
                     class="form-control"
+                    :readonly="isViewMode"
+                    :disabled="isViewMode"
                     rows="2"
                   ></textarea>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Status</label>
+                  <select
+                    v-model="treatmentForm.status"
+                    class="form-select"
+                    :disabled="isViewMode"
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
                 </div>
               </div>
             </div>
@@ -1073,9 +1198,23 @@ const clearError = () => {
                 @click="closeModals"
                 :disabled="loading"
               >
-                Cancel
+                {{ isViewMode ? "Close" : "Cancel" }}
               </button>
-              <button type="submit" class="btn btn-primary" :disabled="loading">
+              <button
+                v-if="isViewMode && canEdit"
+                type="button"
+                class="btn btn-primary"
+                @click="switchToEditMode"
+              >
+                <i class="bi bi-pencil me-2"></i>
+                Edit
+              </button>
+              <button
+                v-if="!isViewMode"
+                type="submit"
+                class="btn btn-primary"
+                :disabled="loading"
+              >
                 <i class="bi bi-check-lg me-2"></i>
                 {{ loading ? "Updating..." : "Update Treatment" }}
               </button>
@@ -1199,6 +1338,13 @@ const clearError = () => {
                     rows="2"
                   ></textarea>
                 </div>
+                <div class="col-md-6">
+                  <label class="form-label">Status</label>
+                  <select v-model="diagnosisForm.status" class="form-select">
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
               </div>
             </div>
             <div class="modal-footer">
@@ -1220,7 +1366,7 @@ const clearError = () => {
       </div>
     </div>
 
-    <!-- Edit Diagnosis Modal -->
+    <!-- Edit/View Diagnosis Modal -->
     <div
       class="modal fade"
       :class="{ show: showEditModal === 'diagnosis' }"
@@ -1228,14 +1374,19 @@ const clearError = () => {
     >
       <div class="modal-dialog modal-lg">
         <div class="modal-content">
-          <div class="modal-header">
+          <div
+            class="modal-header"
+            :class="isViewMode ? 'bg-info text-white' : ''"
+          >
             <h5 class="modal-title">
-              <i class="bi bi-pencil me-2"></i>
-              Edit Diagnosis
+              <i
+                :class="isViewMode ? 'bi bi-eye me-2' : 'bi bi-pencil me-2'"
+              ></i>
+              {{ isViewMode ? "View Diagnosis Details" : "Edit Diagnosis" }}
             </h5>
             <button
               type="button"
-              class="btn-close"
+              :class="isViewMode ? 'btn-close btn-close-white' : 'btn-close'"
               @click="closeModals"
             ></button>
           </div>
@@ -1249,6 +1400,8 @@ const clearError = () => {
                     type="text"
                     class="form-control"
                     :class="{ 'is-invalid': diagnosisErrors.name }"
+                    :readonly="isViewMode"
+                    :disabled="isViewMode"
                     required
                   />
                   <div v-if="diagnosisErrors.name" class="invalid-feedback">
@@ -1256,12 +1409,14 @@ const clearError = () => {
                   </div>
                 </div>
                 <div class="col-md-6">
-                  <label class="form-label">ICD Code *</label>
+                  <label class="form-label">ICD-10 Code *</label>
                   <input
                     v-model="diagnosisForm.code"
                     type="text"
                     class="form-control"
                     :class="{ 'is-invalid': diagnosisErrors.code }"
+                    :readonly="isViewMode"
+                    :disabled="isViewMode"
                     required
                   />
                   <div v-if="diagnosisErrors.code" class="invalid-feedback">
@@ -1269,12 +1424,12 @@ const clearError = () => {
                   </div>
                 </div>
                 <div class="col-md-6">
-                  <label class="form-label">Category *</label>
+                  <label class="form-label">Category</label>
                   <select
                     v-model="diagnosisForm.category"
                     class="form-select"
                     :class="{ 'is-invalid': diagnosisErrors.category }"
-                    required
+                    :disabled="isViewMode"
                   >
                     <option value="General">General</option>
                     <option value="Cardiovascular">Cardiovascular</option>
@@ -1291,6 +1446,8 @@ const clearError = () => {
                     v-model="diagnosisForm.description"
                     class="form-control"
                     :class="{ 'is-invalid': diagnosisErrors.description }"
+                    :readonly="isViewMode"
+                    :disabled="isViewMode"
                     rows="2"
                     required
                   ></textarea>
@@ -1306,6 +1463,8 @@ const clearError = () => {
                   <textarea
                     v-model="diagnosisForm.symptoms"
                     class="form-control"
+                    :readonly="isViewMode"
+                    :disabled="isViewMode"
                     rows="2"
                   ></textarea>
                 </div>
@@ -1314,6 +1473,8 @@ const clearError = () => {
                   <textarea
                     v-model="diagnosisForm.riskFactors"
                     class="form-control"
+                    :readonly="isViewMode"
+                    :disabled="isViewMode"
                     rows="2"
                   ></textarea>
                 </div>
@@ -1322,6 +1483,8 @@ const clearError = () => {
                   <textarea
                     v-model="diagnosisForm.diagnosticCriteria"
                     class="form-control"
+                    :readonly="isViewMode"
+                    :disabled="isViewMode"
                     rows="2"
                   ></textarea>
                 </div>
@@ -1330,8 +1493,21 @@ const clearError = () => {
                   <textarea
                     v-model="diagnosisForm.complications"
                     class="form-control"
+                    :readonly="isViewMode"
+                    :disabled="isViewMode"
                     rows="2"
                   ></textarea>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Status</label>
+                  <select
+                    v-model="diagnosisForm.status"
+                    class="form-select"
+                    :disabled="isViewMode"
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
                 </div>
               </div>
             </div>
@@ -1342,9 +1518,23 @@ const clearError = () => {
                 @click="closeModals"
                 :disabled="loading"
               >
-                Cancel
+                {{ isViewMode ? "Close" : "Cancel" }}
               </button>
-              <button type="submit" class="btn btn-primary" :disabled="loading">
+              <button
+                v-if="isViewMode && canEdit"
+                type="button"
+                class="btn btn-primary"
+                @click="switchToEditMode"
+              >
+                <i class="bi bi-pencil me-2"></i>
+                Edit
+              </button>
+              <button
+                v-if="!isViewMode"
+                type="submit"
+                class="btn btn-primary"
+                :disabled="loading"
+              >
                 <i class="bi bi-check-lg me-2"></i>
                 {{ loading ? "Updating..." : "Update Diagnosis" }}
               </button>
@@ -1354,16 +1544,81 @@ const clearError = () => {
       </div>
     </div>
 
+    <!-- Delete Confirmation Modal -->
+    <div
+      class="modal fade"
+      :class="{ show: showDeleteConfirm }"
+      :style="{ display: showDeleteConfirm ? 'block' : 'none' }"
+    >
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header bg-danger text-white">
+            <h5 class="modal-title">
+              <i class="bi bi-exclamation-triangle me-2"></i>
+              Confirm Delete
+            </h5>
+            <button
+              type="button"
+              class="btn-close btn-close-white"
+              @click="cancelDelete"
+            ></button>
+          </div>
+          <div class="modal-body" v-if="itemToDelete">
+            <p class="mb-0">
+              Are you sure you want to delete
+              <strong>{{ itemToDelete.name }}</strong
+              >?
+            </p>
+            <p class="text-muted small mt-2 mb-0">
+              This action cannot be undone.
+            </p>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              @click="cancelDelete"
+              :disabled="loading"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn-danger"
+              @click="executeDelete"
+              :disabled="loading"
+            >
+              <i class="bi bi-trash me-2"></i>
+              {{ loading ? "Deleting..." : "Delete" }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Modal Backdrop -->
     <div
-      v-if="showAddModal || showEditModal"
+      v-if="showAddModal || showEditModal || showDeleteConfirm"
       class="modal-backdrop fade show"
-      @click="closeModals"
+      @click="
+        closeModals();
+        cancelDelete();
+      "
     ></div>
   </div>
 </template>
 
 <style scoped>
+/* Fix dropdown menu z-index to appear above other elements */
+.btn-group {
+  position: relative;
+  z-index: 1000;
+}
+
+.btn-group .dropdown-menu {
+  z-index: 1050;
+}
+
 .search-box {
   position: relative;
 }

@@ -3,7 +3,11 @@ import { ref, computed, onMounted } from "vue";
 import { useSupabase } from "../../composables/useSupabase.js";
 import { useAuthStore } from "../../stores/auth.js";
 
-const { consultationNotes: consultationNotesOps, user } = useSupabase();
+const {
+  consultationNotes: consultationNotesOps,
+  patients: patientOps,
+  staff: staffOps,
+} = useSupabase();
 const authStore = useAuthStore();
 
 // Reactive data
@@ -15,6 +19,8 @@ const showViewModal = ref(false);
 const selectedNote = ref(null);
 const filterType = ref("all");
 const consultationNotes = ref([]);
+const patientsList = ref([]);
+const currentStaff = ref(null); // Current logged-in staff record
 const error = ref(null);
 const operationError = ref(null);
 
@@ -92,16 +98,6 @@ const draftNotes = computed(() => {
   });
 });
 
-const recentNotes = computed(() => {
-  return consultationNotes.value
-    .sort((a, b) => {
-      const aDate = getNoteField(a, "createdAt");
-      const bDate = getNoteField(b, "createdAt");
-      return new Date(bDate) - new Date(aDate);
-    })
-    .slice(0, 5);
-});
-
 // Methods
 const fetchNotes = async () => {
   loading.value = true;
@@ -109,6 +105,21 @@ const fetchNotes = async () => {
   try {
     const notes = await consultationNotesOps.getAllConsultationNotes();
     consultationNotes.value = notes || [];
+
+    // Fetch patients for the dropdown
+    const patientsData = await patientOps.getAllPatients();
+    patientsList.value = patientsData || [];
+
+    // Fetch current staff record for the logged-in user
+    if (authStore.user?.id) {
+      try {
+        const staffData = await staffOps.getStaffByUserId(authStore.user.id);
+        currentStaff.value = staffData;
+      } catch (staffErr) {
+        console.warn("Could not fetch staff record:", staffErr);
+        currentStaff.value = null;
+      }
+    }
   } catch (err) {
     console.error("Error fetching consultation notes:", err);
     error.value = "Failed to load consultation notes. Please try again.";
@@ -147,6 +158,9 @@ const openAddModal = () => {
 };
 
 const openEditModal = (note) => {
+  // Close view modal if open
+  showViewModal.value = false;
+
   selectedNote.value = note;
   noteForm.value = {
     patientId: getNoteField(note, "patientId"),
@@ -177,16 +191,28 @@ const closeModals = () => {
   resetForm();
 };
 
+// Helper to get patient name from ID
+const getPatientNameById = (patientId) => {
+  const patient = patientsList.value.find((p) => p.PatientID === patientId);
+  if (patient) {
+    return `${patient.FirstName || ""} ${patient.Surname || ""}`.trim();
+  }
+  return "Unknown Patient";
+};
+
 const addNote = async () => {
   operationError.value = null;
   try {
+    // Get patient name from selected patient ID
+    const patientName = getPatientNameById(noteForm.value.patientId);
+
     const noteData = {
       PatientID: noteForm.value.patientId,
-      PatientName: noteForm.value.patientName,
+      PatientName: patientName,
       AppointmentID: noteForm.value.appointmentId || null,
-      EnteredBy: user.value?.id || 1, // Current user ID
+      EnteredBy: currentStaff.value?.StaffID || null, // Staff ID from Staff table
       StaffName:
-        user.value?.fullName || user.value?.username || "Current Nurse",
+        authStore.user?.fullName || authStore.user?.username || "Current Nurse",
       Type: noteForm.value.type,
       Subject: noteForm.value.subject,
       Content: noteForm.value.content,
@@ -215,13 +241,16 @@ const addNote = async () => {
 const updateNote = async () => {
   operationError.value = null;
   try {
+    // Get patient name from selected patient ID
+    const patientName = getPatientNameById(noteForm.value.patientId);
+
     const noteData = {
       PatientID: noteForm.value.patientId,
-      PatientName: noteForm.value.patientName,
+      PatientName: patientName,
       AppointmentID: noteForm.value.appointmentId || null,
-      EnteredBy: user.value?.id || 1, // Current user ID
+      EnteredBy: currentStaff.value?.StaffID || null, // Staff ID from Staff table
       StaffName:
-        user.value?.fullName || user.value?.username || "Current Nurse",
+        authStore.user?.fullName || authStore.user?.username || "Current Nurse",
       Type: noteForm.value.type,
       Subject: noteForm.value.subject,
       Content: noteForm.value.content,
@@ -281,23 +310,173 @@ const formatDateTime = (dateTime) => {
 };
 
 const exportNote = (note) => {
-  // Simulate export functionality
-  const exportData = {
-    patientName: note.patientName,
-    date: formatDateTime(note.createdAt),
-    type: note.type,
-    subject: note.subject,
-    content: note.content,
-    assessment: note.assessment,
-    plan: note.plan,
-    staffName: note.staffName,
-  };
+  const patientName = getNoteField(note, "patientName");
+  const staffName = getNoteField(note, "staffName");
+  const noteType = getNoteField(note, "type");
+  const subject = getNoteField(note, "subject");
+  const content = getNoteField(note, "content");
+  const assessment = getNoteField(note, "assessment");
+  const plan = getNoteField(note, "plan");
+  const followUp = getNoteField(note, "followUp");
+  const status = getNoteField(note, "status");
+  const createdAt = getNoteField(note, "createdAt");
+  const vitalSigns = getNoteField(note, "vitalSigns") || {};
 
-  alert("Note export functionality would be implemented here");
+  const exportText = `
+CONSULTATION NOTE EXPORT
+========================
+
+Patient: ${patientName}
+Healthcare Provider: ${staffName}
+Date: ${formatDateTime(createdAt)}
+Type: ${noteType}
+Status: ${status}
+
+Subject: ${subject}
+
+Content:
+${content || "N/A"}
+
+Assessment:
+${assessment || "N/A"}
+
+Plan:
+${plan || "N/A"}
+
+Follow-up:
+${followUp || "N/A"}
+
+Vital Signs:
+${vitalSigns.bloodPressure ? `Blood Pressure: ${vitalSigns.bloodPressure}` : ""}
+${vitalSigns.heartRate ? `Heart Rate: ${vitalSigns.heartRate}` : ""}
+${vitalSigns.temperature ? `Temperature: ${vitalSigns.temperature}` : ""}
+${vitalSigns.weight ? `Weight: ${vitalSigns.weight}` : ""}
+${vitalSigns.height ? `Height: ${vitalSigns.height}` : ""}
+
+Generated on: ${new Date().toLocaleString()}
+  `.trim();
+
+  const blob = new Blob([exportText], { type: "text/plain" });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `consultation-note-${getNoteField(note, "id")}-${new Date().toISOString().split("T")[0]}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
 };
 
 const printNote = (note) => {
-  alert("Print functionality would be implemented here");
+  const patientName = getNoteField(note, "patientName");
+  const staffName = getNoteField(note, "staffName");
+  const noteType = getNoteField(note, "type");
+  const subject = getNoteField(note, "subject");
+  const content = getNoteField(note, "content");
+  const assessment = getNoteField(note, "assessment");
+  const plan = getNoteField(note, "plan");
+  const followUp = getNoteField(note, "followUp");
+  const status = getNoteField(note, "status");
+  const createdAt = getNoteField(note, "createdAt");
+  const vitalSigns = getNoteField(note, "vitalSigns") || {};
+
+  const printContent = `
+    <html>
+      <head>
+        <title>Consultation Note - ${patientName}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+          .header { border-bottom: 2px solid #333; margin-bottom: 20px; padding-bottom: 10px; }
+          .header h1 { margin: 0; color: #333; }
+          .section { margin: 15px 0; }
+          .section-title { font-weight: bold; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 10px; }
+          .label { font-weight: bold; color: #555; }
+          .content { white-space: pre-wrap; background: #f9f9f9; padding: 10px; border-radius: 5px; }
+          .vital-signs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 10px 0; }
+          .vital-sign { padding: 8px; background: #f5f5f5; border-radius: 4px; }
+          .badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 12px; margin-left: 10px; }
+          .badge-primary { background: #0d6efd; color: white; }
+          .badge-success { background: #198754; color: white; }
+          .badge-warning { background: #ffc107; color: #333; }
+          .footer { border-top: 1px solid #ddd; margin-top: 30px; padding-top: 10px; font-size: 12px; color: #666; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>Consultation Note</h1>
+          <p><span class="label">Patient:</span> ${patientName}</p>
+          <p><span class="label">Provider:</span> ${staffName}</p>
+          <p><span class="label">Date:</span> ${formatDateTime(createdAt)}</p>
+          <p><span class="label">Type:</span> <span class="badge badge-primary">${noteType}</span> <span class="label" style="margin-left: 15px;">Status:</span> <span class="badge badge-${status === "Final" ? "success" : "warning"}">${status}</span></p>
+        </div>
+        
+        <div class="section">
+          <div class="section-title">Subject</div>
+          <p>${subject}</p>
+        </div>
+        
+        <div class="section">
+          <div class="section-title">Content</div>
+          <div class="content">${content || "N/A"}</div>
+        </div>
+        
+        ${
+          assessment
+            ? `
+        <div class="section">
+          <div class="section-title">Assessment</div>
+          <div class="content">${assessment}</div>
+        </div>`
+            : ""
+        }
+        
+        ${
+          plan
+            ? `
+        <div class="section">
+          <div class="section-title">Plan</div>
+          <div class="content">${plan}</div>
+        </div>`
+            : ""
+        }
+        
+        ${
+          followUp
+            ? `
+        <div class="section">
+          <div class="section-title">Follow-up</div>
+          <div class="content">${followUp}</div>
+        </div>`
+            : ""
+        }
+        
+        ${
+          Object.values(vitalSigns).some((v) => v)
+            ? `
+        <div class="section">
+          <div class="section-title">Vital Signs</div>
+          <div class="vital-signs">
+            ${vitalSigns.bloodPressure ? `<div class="vital-sign"><span class="label">Blood Pressure:</span> ${vitalSigns.bloodPressure}</div>` : ""}
+            ${vitalSigns.heartRate ? `<div class="vital-sign"><span class="label">Heart Rate:</span> ${vitalSigns.heartRate}</div>` : ""}
+            ${vitalSigns.temperature ? `<div class="vital-sign"><span class="label">Temperature:</span> ${vitalSigns.temperature}</div>` : ""}
+            ${vitalSigns.weight ? `<div class="vital-sign"><span class="label">Weight:</span> ${vitalSigns.weight}</div>` : ""}
+            ${vitalSigns.height ? `<div class="vital-sign"><span class="label">Height:</span> ${vitalSigns.height}</div>` : ""}
+          </div>
+        </div>`
+            : ""
+        }
+        
+        <div class="footer">
+          <p>Generated on: ${new Date().toLocaleString()}</p>
+        </div>
+      </body>
+    </html>
+  `;
+
+  const printWindow = window.open("", "_blank");
+  printWindow.document.write(printContent);
+  printWindow.document.close();
+  printWindow.print();
 };
 
 onMounted(async () => {
@@ -373,7 +552,15 @@ onMounted(async () => {
             <div class="stats-icon mb-2">
               <i class="bi bi-clock text-info fs-2"></i>
             </div>
-            <h4 class="mb-1">{{ recentNotes.length }}</h4>
+            <h4 class="mb-1">
+              {{
+                consultationNotes.filter(
+                  (n) =>
+                    new Date(getNoteField(n, "createdAt")) >
+                    new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+                ).length
+              }}
+            </h4>
             <small class="text-muted">Recent (7 days)</small>
           </div>
         </div>
@@ -385,16 +572,18 @@ onMounted(async () => {
       v-if="draftNotes.length > 0"
       class="alert alert-warning animate-fade-in-up animation-delay-200"
     >
-      <div class="d-flex align-items-center">
-        <div class="alert-icon me-3">
-          <i class="bi bi-exclamation-triangle text-warning fs-4"></i>
-        </div>
-        <div class="grow">
-          <h6 class="alert-heading mb-1">Draft Notes Require Completion</h6>
-          <p class="mb-0">
-            You have {{ draftNotes.length }} draft note(s) that need to be
-            finalized.
-          </p>
+      <div class="d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center">
+          <div class="alert-icon me-3">
+            <i class="bi bi-exclamation-triangle text-warning fs-4"></i>
+          </div>
+          <div class="grow">
+            <h6 class="alert-heading mb-1">Draft Notes Require Completion</h6>
+            <p class="mb-0">
+              You have {{ draftNotes.length }} draft note(s) that need to be
+              finalized.
+            </p>
+          </div>
         </div>
         <button class="btn btn-warning btn-sm">
           <i class="bi bi-eye me-1"></i>
@@ -584,6 +773,13 @@ onMounted(async () => {
                     >
                       <i class="bi bi-download"></i>
                     </button>
+                    <button
+                      class="btn btn-sm btn-outline-secondary"
+                      @click="printNote(note)"
+                      title="Print Note"
+                    >
+                      <i class="bi bi-printer"></i>
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -606,83 +802,6 @@ onMounted(async () => {
             <i class="bi bi-plus-circle me-2"></i>
             Create First Note
           </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Recent Notes Summary -->
-    <div
-      v-if="recentNotes.length > 0"
-      class="card mt-4 animate-fade-in-up animation-delay-500"
-    >
-      <div class="card-header">
-        <h5 class="mb-0">
-          <i class="bi bi-clock-history me-2"></i>
-          Recent Notes
-        </h5>
-      </div>
-      <div class="card-body">
-        <div class="row g-3">
-          <div
-            v-for="note in recentNotes"
-            :key="getNoteField(note, 'id')"
-            class="col-md-12"
-          >
-            <div class="recent-note-card p-3 border rounded animate-fade-in-up">
-              <div class="d-flex justify-content-between align-items-start">
-                <div class="grow">
-                  <div class="d-flex align-items-center mb-2">
-                    <div class="patient-avatar-small me-3">
-                      <i class="bi bi-person-circle"></i>
-                    </div>
-                    <div>
-                      <strong>{{ getNoteField(note, "patientName") }}</strong>
-                      <span
-                        class="badge ms-2"
-                        :class="`bg-${getStatusBadgeVariant(
-                          getNoteField(note, 'status'),
-                        )}`"
-                      >
-                        {{ getNoteField(note, "status") }}
-                      </span>
-                      <span
-                        class="badge ms-2"
-                        :class="`bg-${getTypeBadgeVariant(
-                          getNoteField(note, 'type'),
-                        )}`"
-                      >
-                        {{ getNoteField(note, "type") }}
-                      </span>
-                    </div>
-                  </div>
-                  <h6 class="mb-2">{{ getNoteField(note, "subject") }}</h6>
-                  <p class="mb-2">
-                    {{ getNoteField(note, "content").substring(0, 150) }}...
-                  </p>
-                  <small class="text-muted">
-                    Created by {{ getNoteField(note, "staffName") }} on
-                    {{ formatDateTime(getNoteField(note, "createdAt")) }}
-                  </small>
-                </div>
-                <div class="text-end">
-                  <button
-                    class="btn btn-sm btn-outline-primary me-2"
-                    @click="openViewModal(note)"
-                  >
-                    <i class="bi bi-eye me-1"></i>
-                    View
-                  </button>
-                  <button
-                    class="btn btn-sm btn-outline-secondary"
-                    @click="printNote(note)"
-                  >
-                    <i class="bi bi-printer me-1"></i>
-                    Print
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -725,13 +844,21 @@ onMounted(async () => {
 
               <div class="row g-3">
                 <div class="col-md-6">
-                  <label class="form-label">Patient Name *</label>
-                  <input
-                    v-model="noteForm.patientName"
-                    type="text"
-                    class="form-control"
+                  <label class="form-label">Patient *</label>
+                  <select
+                    v-model="noteForm.patientId"
+                    class="form-select"
                     required
-                  />
+                  >
+                    <option value="">Select Patient</option>
+                    <option
+                      v-for="patient in patientsList"
+                      :key="patient.PatientID"
+                      :value="patient.PatientID"
+                    >
+                      {{ patient.FirstName }} {{ patient.Surname }}
+                    </option>
+                  </select>
                 </div>
                 <div class="col-md-6">
                   <label class="form-label">Note Type *</label>
@@ -903,13 +1030,22 @@ onMounted(async () => {
 
               <div class="row g-3">
                 <div class="col-md-6">
-                  <label class="form-label">Patient Name *</label>
-                  <input
-                    v-model="noteForm.patientName"
-                    type="text"
-                    class="form-control"
+                  <label class="form-label">Patient *</label>
+                  <select
+                    v-model="noteForm.patientId"
+                    class="form-select"
                     required
-                  />
+                    disabled
+                  >
+                    <option value="">Select Patient</option>
+                    <option
+                      v-for="patient in patientsList"
+                      :key="patient.PatientID"
+                      :value="patient.PatientID"
+                    >
+                      {{ patient.FirstName }} {{ patient.Surname }}
+                    </option>
+                  </select>
                 </div>
                 <div class="col-md-6">
                   <label class="form-label">Note Type *</label>

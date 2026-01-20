@@ -167,6 +167,12 @@ CREATE TABLE IF NOT EXISTS "Diagnosis" (
     "DiagnosisName" TEXT NOT NULL,
     "DiagnosisCode" VARCHAR(20), -- ICD-10 code
     "Description" TEXT,
+    "category" VARCHAR(50) DEFAULT 'General',
+    "symptoms" TEXT,
+    "riskFactors" TEXT,
+    "diagnosticCriteria" TEXT,
+    "complications" TEXT,
+    "status" VARCHAR(20) DEFAULT 'Active',
     "created_at" TIMESTAMPTZ DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ DEFAULT NOW()
 );
@@ -177,6 +183,12 @@ CREATE TABLE IF NOT EXISTS "Treatment" (
     "TreatmentName" TEXT NOT NULL,
     "TreatmentCode" VARCHAR(20),
     "Description" TEXT,
+    "category" VARCHAR(50) DEFAULT 'General',
+    "medications" JSONB DEFAULT '[]',
+    "instructions" TEXT,
+    "contraindications" TEXT,
+    "sideEffects" TEXT,
+    "status" VARCHAR(20) DEFAULT 'Active',
     "created_at" TIMESTAMPTZ DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ DEFAULT NOW()
 );
@@ -186,11 +198,22 @@ CREATE TABLE IF NOT EXISTS "Notes" (
     "NoteID" SERIAL PRIMARY KEY,
     "Content" TEXT NOT NULL,
     "PatientID" UUID,
+    "PatientName" VARCHAR(255),
     "EnteredBy" UUID,
+    "StaffName" VARCHAR(255),
+    "AppointmentID" INTEGER,
+    "Type" VARCHAR(50) DEFAULT 'Consultation',
+    "Subject" VARCHAR(255),
+    "VitalSigns" JSONB,
+    "Assessment" TEXT,
+    "Plan" TEXT,
+    "FollowUp" TEXT,
+    "Status" VARCHAR(50) DEFAULT 'Draft',
     "CreatedAt" TIMESTAMPTZ DEFAULT NOW(),
     "UpdatedAt" TIMESTAMPTZ DEFAULT NOW(),
     CONSTRAINT fk_notes_patientid FOREIGN KEY ("PatientID") REFERENCES "Patients"("PatientID") ON DELETE CASCADE,
-    CONSTRAINT fk_notes_enteredby FOREIGN KEY ("EnteredBy") REFERENCES "Staff"("StaffID") ON DELETE SET NULL
+    CONSTRAINT fk_notes_enteredby FOREIGN KEY ("EnteredBy") REFERENCES "Staff"("StaffID") ON DELETE SET NULL,
+    CONSTRAINT fk_notes_appointmentid FOREIGN KEY ("AppointmentID") REFERENCES "Appointment"("AppointmentID") ON DELETE SET NULL
 );
 
 -- MedicalRecord table
@@ -252,6 +275,20 @@ CREATE TABLE IF NOT EXISTS "UserSessions" (
     CONSTRAINT fk_usersessions_userid FOREIGN KEY ("UserID") REFERENCES "Users"("UserID") ON DELETE CASCADE
 );
 
+-- Report table for saved analytics reports
+CREATE TABLE IF NOT EXISTS "Report" (
+    "ReportID" SERIAL PRIMARY KEY,
+    "Title" VARCHAR(255) NOT NULL,
+    "Description" TEXT,
+    "ReportType" VARCHAR(50) DEFAULT 'summary',
+    "Data" JSONB, -- Stores the analytics data snapshot
+    "Parameters" JSONB, -- Stores date range and other parameters
+    "GeneratedBy" UUID,
+    "CreatedAt" TIMESTAMPTZ DEFAULT NOW(),
+    "UpdatedAt" TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT fk_report_generatedby FOREIGN KEY ("GeneratedBy") REFERENCES "Users"("UserID") ON DELETE SET NULL
+);
+
 -- =========================================
 -- INDEXES
 -- =========================================
@@ -284,6 +321,9 @@ CREATE INDEX IF NOT EXISTS idx_notification_createdat ON "Notification"("Created
 
 CREATE INDEX IF NOT EXISTS idx_usersessions_userid ON "UserSessions"("UserID");
 CREATE INDEX IF NOT EXISTS idx_usersessions_expiresat ON "UserSessions"("ExpiresAt");
+
+CREATE INDEX IF NOT EXISTS idx_report_generatedby ON "Report"("GeneratedBy");
+CREATE INDEX IF NOT EXISTS idx_report_createdat ON "Report"("CreatedAt");
 
 -- =========================================
 -- FUNCTIONS
@@ -732,9 +772,9 @@ CREATE POLICY "Staff manage notifications" ON "Notification"
     FOR INSERT TO authenticated
     WITH CHECK (is_staff());
 
-CREATE POLICY "Admins see all notifications" ON "Notification"
+CREATE POLICY "Staff see all notifications" ON "Notification"
     FOR SELECT TO authenticated
-    USING (is_admin());
+    USING (is_staff());
 
 -- Service role full access
 CREATE POLICY "Service role full access notifications" ON "Notification"
@@ -762,6 +802,38 @@ CREATE POLICY "Admins see all sessions" ON "UserSessions"
 
 -- Service role full access
 CREATE POLICY "Service role full access sessions" ON "UserSessions"
+    FOR ALL TO service_role
+    USING (true);
+
+-- =========================================
+-- RLS POLICIES - Report Table
+-- =========================================
+
+-- Enable RLS on Report table
+ALTER TABLE "Report" ENABLE ROW LEVEL SECURITY;
+
+-- Admins can read all reports
+CREATE POLICY "Admins can read all reports" ON "Report"
+    FOR SELECT TO authenticated
+    USING (is_admin());
+
+-- Admins can create reports
+CREATE POLICY "Admins can create reports" ON "Report"
+    FOR INSERT TO authenticated
+    WITH CHECK (is_admin());
+
+-- Admins can update reports
+CREATE POLICY "Admins can update reports" ON "Report"
+    FOR UPDATE TO authenticated
+    USING (is_admin());
+
+-- Admins can delete reports
+CREATE POLICY "Admins can delete reports" ON "Report"
+    FOR DELETE TO authenticated
+    USING (is_admin());
+
+-- Service role full access
+CREATE POLICY "Service role full access reports" ON "Report"
     FOR ALL TO service_role
     USING (true);
 

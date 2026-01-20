@@ -425,13 +425,30 @@ export const useSupabase = () => {
       await requireAuth();
       return withLoading(async () => {
         const authStore = useAuthStore();
+        const currentUser = authStore.user;
+        const role = authStore.userRole?.toLowerCase();
+
+        let scheduledBy = null;
+
+        // If the user is staff (nurse/admin), get their StaffID
+        if (role === "nurse" || role === "admin") {
+          const { data: staffData } = await supabase
+            .from("Staff")
+            .select("StaffID")
+            .eq("UserID", currentUser.id)
+            .single();
+
+          scheduledBy = staffData?.StaffID || null;
+        }
+        // For patients, ScheduledBy is null (they're requesting, not scheduling)
+
         const { data, error } = await supabase
           .from("Appointment")
           .insert([
             {
               ...appointmentData,
-              ScheduledBy: authStore.user.id,
-              created_at: new Date().toISOString(),
+              ScheduledBy: scheduledBy,
+              CreatedAt: new Date().toISOString(),
             },
           ])
           .select()
@@ -539,6 +556,20 @@ export const useSupabase = () => {
         return true;
       });
     },
+
+    async getStaffByUserId(userId) {
+      await requireAuth();
+      return withLoading(async () => {
+        const { data, error } = await supabase
+          .from("Staff")
+          .select("*")
+          .eq("UserID", userId)
+          .single();
+
+        if (error) throw error;
+        return data;
+      });
+    },
   };
 
   // Notification operations
@@ -551,8 +582,7 @@ export const useSupabase = () => {
           .select(
             `
             *,
-
-            Users!inner(fullName, Email)
+            Users(fullName, Email)
           `,
           )
           .order("CreatedAt", { ascending: false });
@@ -587,7 +617,6 @@ export const useSupabase = () => {
             {
               ...notificationData,
               UserID: notificationData.UserID || authStore.user.id,
-              created_at: new Date().toISOString(),
             },
           ])
           .select()
@@ -717,6 +746,10 @@ export const useSupabase = () => {
         const { data, error } = await supabase.from("MedicalRecord").select(
           `
             *,
+            Patients!PatientID(
+              *,
+              Users!UserID(fullName)
+            ),
             Staff!EnteredBy(
               *,
               Users!UserID(fullName)
@@ -762,13 +795,27 @@ export const useSupabase = () => {
       await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const authStore = useAuthStore();
+        const currentUser = authStore.user;
+
+        // Get the StaffID for the current user (EnteredBy is FK to Staff.StaffID)
+        let enteredBy = null;
+        const { data: staffData } = await supabase
+          .from("Staff")
+          .select("StaffID")
+          .eq("UserID", currentUser.id)
+          .single();
+
+        if (staffData) {
+          enteredBy = staffData.StaffID;
+        }
+
         const { data, error } = await supabase
           .from("MedicalRecord")
           .insert([
             {
               ...recordData,
-              EnteredBy: authStore.user.id,
-              created_at: new Date().toISOString(),
+              EnteredBy: enteredBy,
+              CreatedAt: new Date().toISOString(),
             },
           ])
           .select()
@@ -866,15 +913,10 @@ export const useSupabase = () => {
     async getAllReports() {
       await requireRole(["admin"]);
       return withLoading(async () => {
-        const { data, error } = await supabase.from("Reports").select(
-          `
-            *,
-            GeneratedByNavigation:GeneratedBy(
-              *,
-              Users!inner(fullName)
-            )
-          `,
-        );
+        const { data, error } = await supabase
+          .from("Report")
+          .select("*")
+          .order("CreatedAt", { ascending: false });
 
         if (error) throw error;
         return data;
@@ -884,16 +926,8 @@ export const useSupabase = () => {
     async getReportById(id) {
       return withLoading(async () => {
         const { data, error } = await supabase
-          .from("Reports")
-          .select(
-            `
-            *,
-            GeneratedByNavigation:GeneratedBy(
-              *,
-              Users!inner(fullName)
-            )
-          `,
-          )
+          .from("Report")
+          .select("*")
           .eq("ReportID", id)
           .single();
 
@@ -907,12 +941,15 @@ export const useSupabase = () => {
       return withLoading(async () => {
         const authStore = useAuthStore();
         const { data, error } = await supabase
-          .from("Reports")
+          .from("Report")
           .insert([
             {
-              ...reportData,
-              GeneratedBy: authStore.user.id,
-              created_at: new Date().toISOString(),
+              Title: reportData.Title,
+              Description: reportData.Description,
+              ReportType: reportData.ReportType,
+              Data: reportData.Data,
+              Parameters: reportData.Parameters,
+              GeneratedBy: authStore.user?.id || null,
             },
           ])
           .select()
@@ -927,9 +964,14 @@ export const useSupabase = () => {
       await requireRole(["admin"]);
       return withLoading(async () => {
         const { data, error } = await supabase
-          .from("Reports")
+          .from("Report")
           .update({
-            ...reportData,
+            Title: reportData.Title,
+            Description: reportData.Description,
+            ReportType: reportData.ReportType,
+            Data: reportData.Data,
+            Parameters: reportData.Parameters,
+            UpdatedAt: new Date().toISOString(),
           })
           .eq("ReportID", id)
           .select()
@@ -944,7 +986,7 @@ export const useSupabase = () => {
       await requireRole(["admin"]);
       return withLoading(async () => {
         const { error } = await supabase
-          .from("Reports")
+          .from("Report")
           .delete()
           .eq("ReportID", id);
 
@@ -957,17 +999,10 @@ export const useSupabase = () => {
       await requireRole(["admin"]);
       return withLoading(async () => {
         const { data, error } = await supabase
-          .from("Reports")
-          .select(
-            `
-            *,
-            GeneratedByNavigation:GeneratedBy(
-              *,
-              Users!inner(fullName)
-            )
-          `,
-          )
-          .eq("ReportType", reportType);
+          .from("Report")
+          .select("*")
+          .eq("ReportType", reportType)
+          .order("CreatedAt", { ascending: false });
 
         if (error) throw error;
         return data;
@@ -978,18 +1013,11 @@ export const useSupabase = () => {
       await requireRole(["admin"]);
       return withLoading(async () => {
         const { data, error } = await supabase
-          .from("Reports")
-          .select(
-            `
-            *,
-            GeneratedByNavigation:GeneratedBy(
-              *,
-              Users!inner(fullName)
-            )
-          `,
-          )
-          .gte("created_at", startDate)
-          .lte("created_at", endDate);
+          .from("Report")
+          .select("*")
+          .gte("CreatedAt", startDate)
+          .lte("CreatedAt", endDate)
+          .order("CreatedAt", { ascending: false });
 
         if (error) throw error;
         return data;
@@ -1000,36 +1028,48 @@ export const useSupabase = () => {
     async getOverviewStats(startDate, endDate) {
       await requireRole(["admin"]);
       return withLoading(async () => {
-        // Get patient count
+        // Get patient count (filtered by registration date if created_at exists)
         const { count: patientsCount, error: patientsError } = await supabase
+          .from("Patients")
+          .select("*", { count: "exact", head: true })
+          .gte("created_at", startDate)
+          .lte("created_at", endDate);
+
+        // Get total patients (not filtered) for reference
+        const { count: totalPatientsCount } = await supabase
           .from("Patients")
           .select("*", { count: "exact", head: true });
 
-        // Get staff count
+        // Get staff count (total staff, not filtered by date)
         const { count: staffCount, error: staffError } = await supabase
           .from("Staff")
           .select("*", { count: "exact", head: true });
 
-        // Get appointments count
+        // Get appointments count (filtered by date range)
         const { count: appointmentsCount, error: appointmentsError } =
           await supabase
             .from("Appointment")
-            .select("*", { count: "exact", head: true });
+            .select("*", { count: "exact", head: true })
+            .gte("DateTime", startDate)
+            .lte("DateTime", endDate);
 
-        // Get medical records count
+        // Get medical records count (filtered by date range)
         const { count: recordsCount, error: recordsError } = await supabase
           .from("MedicalRecord")
-          .select("*", { count: "exact", head: true });
+          .select("*", { count: "exact", head: true })
+          .gte("CreatedAt", startDate)
+          .lte("CreatedAt", endDate);
 
         if (patientsError || staffError || appointmentsError || recordsError) {
           throw new Error("Failed to fetch overview statistics");
         }
 
         const result = {
-          totalPatients: patientsCount || 0,
+          totalPatients: totalPatientsCount || 0, // Total patients (all time)
+          newPatients: patientsCount || 0, // New patients in date range
           totalStaff: staffCount || 0,
-          totalAppointments: appointmentsCount || 0,
-          totalRecords: recordsCount || 0,
+          totalAppointments: appointmentsCount || 0, // Appointments in date range
+          totalRecords: recordsCount || 0, // Records in date range
         };
         return result;
       });
@@ -1038,27 +1078,25 @@ export const useSupabase = () => {
     async getAppointmentAnalytics(startDate, endDate) {
       await requireRole(["admin"]);
       return withLoading(async () => {
-        // Get appointments by status
-        const { data: statusData, error: statusError } = await supabase
-          .from("Appointment")
-          .select("Status")
-          .gte("DateTime", startDate)
-          .lte("DateTime", endDate);
+        // Get appointments with status and reason for type categorization
+        const { data: appointmentData, error: appointmentError } =
+          await supabase
+            .from("Appointment")
+            .select("Status, Reason, DateTime")
+            .gte("DateTime", startDate)
+            .lte("DateTime", endDate);
 
-        // Get appointments by type (skip if Type column doesn't exist)
-        let typeData = [];
-        // Type column may not exist in database, skip query to prevent 400 error
-
-        // Get appointment trends (monthly)
+        // Also get all appointments for trends (not limited to date range for broader view)
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
         const { data: trendsData, error: trendsError } = await supabase
           .from("Appointment")
           .select("DateTime")
-          .gte("DateTime", startDate)
-          .lte("DateTime", endDate);
+          .gte("DateTime", sixMonthsAgo.toISOString());
 
-        if (statusError) {
+        if (appointmentError) {
           throw new Error(
-            `Failed to fetch appointment status data: ${statusError.message}`,
+            `Failed to fetch appointment data: ${appointmentError.message}`,
           );
         }
         if (trendsError) {
@@ -1069,28 +1107,61 @@ export const useSupabase = () => {
 
         // Process status data
         const statusCounts = {};
-        statusData?.forEach((apt) => {
-          statusCounts[apt.Status] = (statusCounts[apt.Status] || 0) + 1;
+        appointmentData?.forEach((apt) => {
+          const status = apt.Status || "Unknown";
+          statusCounts[status] = (statusCounts[status] || 0) + 1;
         });
 
-        // Process type data (only if Type column exists)
+        // Process type data using Reason field to categorize
+        // Common appointment types based on reason keywords
         const typeCounts = {};
-        if (typeData && typeData.length > 0) {
-          typeData.forEach((apt) => {
-            if (apt.Type) {
-              typeCounts[apt.Type] = (typeCounts[apt.Type] || 0) + 1;
+        const typeMapping = {
+          Consultation: ["consult", "consultation", "visit", "check"],
+          "Follow-up": ["follow", "follow-up", "review", "recheck"],
+          Vaccination: ["vaccine", "vaccination", "immunization", "shot"],
+          Emergency: ["emergency", "urgent", "immediate"],
+          "Check-up": ["checkup", "check-up", "physical", "routine", "annual"],
+          Laboratory: ["lab", "test", "blood", "urine"],
+          Other: [],
+        };
+
+        appointmentData?.forEach((apt) => {
+          const reason = (apt.Reason || "").toLowerCase();
+          let matchedType = "Other";
+
+          for (const [type, keywords] of Object.entries(typeMapping)) {
+            if (
+              type !== "Other" &&
+              keywords.some((keyword) => reason.includes(keyword))
+            ) {
+              matchedType = type;
+              break;
             }
-          });
+          }
+
+          typeCounts[matchedType] = (typeCounts[matchedType] || 0) + 1;
+        });
+
+        // Process trends data (monthly) - generate last 6 months
+        const monthlyTrends = {};
+
+        // Initialize last 6 months with 0
+        for (let i = 5; i >= 0; i--) {
+          const date = new Date();
+          date.setMonth(date.getMonth() - i);
+          const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+          monthlyTrends[monthKey] = 0;
         }
 
-        // Process trends data (monthly)
-        const monthlyTrends = {};
+        // Fill in actual data
         trendsData?.forEach((apt) => {
           const date = new Date(apt.DateTime);
           const monthKey = `${date.getFullYear()}-${String(
             date.getMonth() + 1,
           ).padStart(2, "0")}`;
-          monthlyTrends[monthKey] = (monthlyTrends[monthKey] || 0) + 1;
+          if (monthlyTrends.hasOwnProperty(monthKey)) {
+            monthlyTrends[monthKey] = (monthlyTrends[monthKey] || 0) + 1;
+          }
         });
 
         const trends = Object.entries(monthlyTrends)
@@ -1121,23 +1192,100 @@ export const useSupabase = () => {
     async getPatientAnalytics(startDate, endDate) {
       await requireRole(["admin"]);
       return withLoading(async () => {
-        // Get patients by gender (without date filtering since created_at column may not exist)
-        const { data: genderData, error: genderError } = await supabase
+        // Get patients with gender, birth date, and created_at for analytics (filtered by date)
+        const { data: patientData, error: patientError } = await supabase
           .from("Patients")
-          .select("Gender");
+          .select("Gender, BirthDate, created_at")
+          .gte("created_at", startDate)
+          .lte("created_at", endDate);
 
-        if (genderError) {
+        if (patientError) {
           throw new Error(
-            `Failed to fetch patient analytics: ${genderError.message}`,
+            `Failed to fetch patient analytics: ${patientError.message}`,
           );
         }
 
         // Process gender data
         const genderCounts = {};
-        genderData?.forEach((patient) => {
+        patientData?.forEach((patient) => {
           const gender = patient.Gender || "Not specified";
           genderCounts[gender] = (genderCounts[gender] || 0) + 1;
         });
+
+        // Process age groups
+        const ageGroups = {
+          "0-17": 0,
+          "18-25": 0,
+          "26-35": 0,
+          "36-45": 0,
+          "46-55": 0,
+          "56-65": 0,
+          "65+": 0,
+        };
+
+        const ageGroupColors = {
+          "0-17": "#FF6384",
+          "18-25": "#36A2EB",
+          "26-35": "#FFCE56",
+          "36-45": "#4BC0C0",
+          "46-55": "#9966FF",
+          "56-65": "#FF9F40",
+          "65+": "#C9CBCF",
+        };
+
+        const today = new Date();
+        patientData?.forEach((patient) => {
+          if (patient.BirthDate) {
+            const birthDate = new Date(patient.BirthDate);
+            let age = today.getFullYear() - birthDate.getFullYear();
+            const monthDiff = today.getMonth() - birthDate.getMonth();
+            if (
+              monthDiff < 0 ||
+              (monthDiff === 0 && today.getDate() < birthDate.getDate())
+            ) {
+              age--;
+            }
+
+            if (age < 18) ageGroups["0-17"]++;
+            else if (age <= 25) ageGroups["18-25"]++;
+            else if (age <= 35) ageGroups["26-35"]++;
+            else if (age <= 45) ageGroups["36-45"]++;
+            else if (age <= 55) ageGroups["46-55"]++;
+            else if (age <= 65) ageGroups["56-65"]++;
+            else ageGroups["65+"]++;
+          }
+        });
+
+        // Process registration trends (last 6 months)
+        const monthlyRegistrations = {};
+
+        // Initialize last 6 months with 0
+        for (let i = 5; i >= 0; i--) {
+          const date = new Date();
+          date.setMonth(date.getMonth() - i);
+          const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+          monthlyRegistrations[monthKey] = 0;
+        }
+
+        // Fill in actual data
+        patientData?.forEach((patient) => {
+          if (patient.created_at) {
+            const date = new Date(patient.created_at);
+            const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+            if (monthlyRegistrations.hasOwnProperty(monthKey)) {
+              monthlyRegistrations[monthKey]++;
+            }
+          }
+        });
+
+        const registrationTrends = Object.entries(monthlyRegistrations)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([month, registrations]) => ({
+            month: new Date(month + "-01").toLocaleDateString("en-US", {
+              month: "short",
+            }),
+            registrations,
+          }));
 
         return {
           byGender: Object.entries(genderCounts).map(([gender, count]) => ({
@@ -1145,8 +1293,14 @@ export const useSupabase = () => {
             count,
             color: getGenderColor(gender),
           })),
-          byAgeGroup: [], // Placeholder for age groups if needed later
-          registrationTrends: [], // Placeholder for registration trends if needed later
+          byAgeGroup: Object.entries(ageGroups)
+            .filter(([_, count]) => count > 0)
+            .map(([group, count]) => ({
+              group,
+              count,
+              color: ageGroupColors[group] || getRandomColor(),
+            })),
+          registrationTrends,
         };
       });
     },
@@ -1248,14 +1402,25 @@ export const useSupabase = () => {
   };
 
   // Treatment operations (admin and nurse only)
+  const treatments = ref([]);
   const treatmentOps = {
+    treatments,
     async getAllTreatments() {
       await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase.from("Treatment").select("*");
 
         if (error) throw error;
-        return data;
+
+        // Map database columns to component field names
+        const mappedData = (data || []).map((t) => ({
+          ...t,
+          name: t.TreatmentName,
+          code: t.TreatmentCode,
+          description: t.Description,
+        }));
+        treatments.value = mappedData;
+        return mappedData;
       });
     },
 
@@ -1275,36 +1440,68 @@ export const useSupabase = () => {
     async createTreatment(treatmentData) {
       await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
+        // Map form fields to database column names
+        const dbData = {
+          TreatmentName: treatmentData.name,
+          TreatmentCode: treatmentData.code || null,
+          Description: treatmentData.description,
+          category: treatmentData.category || "General",
+          medications: treatmentData.medications || [],
+          instructions: treatmentData.instructions || "",
+          contraindications: treatmentData.contraindications || "",
+          sideEffects: treatmentData.sideEffects || "",
+          status: treatmentData.status || "Active",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
         const { data, error } = await supabase
           .from("Treatment")
-          .insert([
-            {
-              ...treatmentData,
-              created_at: new Date().toISOString(),
-            },
-          ])
+          .insert([dbData])
           .select()
           .single();
 
         if (error) throw error;
-        return data;
+
+        // Map response back to component field names
+        return {
+          ...data,
+          name: data.TreatmentName,
+          description: data.Description,
+        };
       });
     },
 
     async updateTreatment(id, treatmentData) {
       await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
+        // Map form fields to database column names
+        const dbData = {
+          TreatmentName: treatmentData.name,
+          TreatmentCode: treatmentData.code || null,
+          Description: treatmentData.description,
+          category: treatmentData.category || "General",
+          medications: treatmentData.medications || [],
+          instructions: treatmentData.instructions || "",
+          contraindications: treatmentData.contraindications || "",
+          sideEffects: treatmentData.sideEffects || "",
+          status: treatmentData.status || "Active",
+          updated_at: new Date().toISOString(),
+        };
+
         const { data, error } = await supabase
           .from("Treatment")
-          .update({
-            ...treatmentData,
-          })
+          .update(dbData)
           .eq("TreatmentID", id)
           .select()
           .single();
 
         if (error) throw error;
-        return data;
+        return {
+          ...data,
+          name: data.TreatmentName,
+          description: data.Description,
+        };
       });
     },
 
@@ -1336,14 +1533,25 @@ export const useSupabase = () => {
   };
 
   // Diagnosis operations (admin and nurse only)
+  const diagnoses = ref([]);
   const diagnosisOps = {
+    diagnoses,
     async getAllDiagnoses() {
       await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
         const { data, error } = await supabase.from("Diagnosis").select("*");
 
         if (error) throw error;
-        return data;
+
+        // Map database columns to component field names
+        const mappedData = (data || []).map((d) => ({
+          ...d,
+          name: d.DiagnosisName,
+          code: d.DiagnosisCode,
+          description: d.Description,
+        }));
+        diagnoses.value = mappedData;
+        return mappedData;
       });
     },
 
@@ -1356,43 +1564,80 @@ export const useSupabase = () => {
           .single();
 
         if (error) throw error;
-        return data;
+        return {
+          ...data,
+          name: data.DiagnosisName,
+          code: data.DiagnosisCode,
+          description: data.Description,
+        };
       });
     },
 
     async createDiagnosis(diagnosisData) {
       await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
+        // Map form fields to database column names
+        const dbData = {
+          DiagnosisName: diagnosisData.name,
+          DiagnosisCode: diagnosisData.code,
+          Description: diagnosisData.description,
+          category: diagnosisData.category || "General",
+          symptoms: diagnosisData.symptoms || "",
+          riskFactors: diagnosisData.riskFactors || "",
+          diagnosticCriteria: diagnosisData.diagnosticCriteria || "",
+          complications: diagnosisData.complications || "",
+          status: diagnosisData.status || "Active",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
         const { data, error } = await supabase
           .from("Diagnosis")
-          .insert([
-            {
-              ...diagnosisData,
-              created_at: new Date().toISOString(),
-            },
-          ])
+          .insert([dbData])
           .select()
           .single();
 
         if (error) throw error;
-        return data;
+        return {
+          ...data,
+          name: data.DiagnosisName,
+          code: data.DiagnosisCode,
+          description: data.Description,
+        };
       });
     },
 
     async updateDiagnosis(id, diagnosisData) {
       await requireRole(["admin", "nurse"]);
       return withLoading(async () => {
+        // Map form fields to database column names
+        const dbData = {
+          DiagnosisName: diagnosisData.name,
+          DiagnosisCode: diagnosisData.code,
+          Description: diagnosisData.description,
+          category: diagnosisData.category || "General",
+          symptoms: diagnosisData.symptoms || "",
+          riskFactors: diagnosisData.riskFactors || "",
+          diagnosticCriteria: diagnosisData.diagnosticCriteria || "",
+          complications: diagnosisData.complications || "",
+          status: diagnosisData.status || "Active",
+          updated_at: new Date().toISOString(),
+        };
+
         const { data, error } = await supabase
           .from("Diagnosis")
-          .update({
-            ...diagnosisData,
-          })
+          .update(dbData)
           .eq("DiagnosisID", id)
           .select()
           .single();
 
         if (error) throw error;
-        return data;
+        return {
+          ...data,
+          name: data.DiagnosisName,
+          code: data.DiagnosisCode,
+          description: data.Description,
+        };
       });
     },
 

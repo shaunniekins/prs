@@ -16,6 +16,7 @@ const error = ref(null);
 const activeTab = ref("overview");
 const showReportForm = ref(false);
 const editingReport = ref(null);
+const expandedReportId = ref(null);
 const dateRange = ref({
   start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
     .toISOString()
@@ -119,28 +120,13 @@ const fetchReportsList = async () => {
   loading.value = true;
   error.value = null;
   try {
-    // Mock data for reports list
-    reportsList.value = [
-      {
-        ReportID: 1,
-        Title: "Monthly Patient Summary",
-        Description: "Summary of patient registrations and demographics",
-        ReportType: "summary",
-        DateTime: new Date().toISOString(),
-        GeneratedByNavigation: { fullName: "Admin User" },
-      },
-      {
-        ReportID: 2,
-        Title: "Appointment Analytics",
-        Description: "Detailed analysis of appointment trends",
-        ReportType: "analytics",
-        DateTime: new Date().toISOString(),
-        GeneratedByNavigation: { fullName: "Admin User" },
-      },
-    ];
+    // Fetch saved reports from Supabase
+    const reports = await reportOps.getAllReports();
+    reportsList.value = reports || [];
   } catch (err) {
-    error.value = "Failed to fetch reports: " + err.message;
-    console.error("Error fetching reports:", err);
+    // If table doesn't exist yet, just use empty array
+    console.warn("Could not fetch reports from database:", err.message);
+    reportsList.value = [];
   } finally {
     loading.value = false;
   }
@@ -270,23 +256,38 @@ const createReport = async () => {
   loading.value = true;
   error.value = null;
   try {
-    const newReport = {
-      ReportID: Date.now(),
+    // Capture current analytics data as a snapshot
+    const snapshotData = {
+      overview: { ...reportData.value.overview },
+      appointments: {
+        byStatus: [...reportData.value.appointments.byStatus],
+        byType: [...reportData.value.appointments.byType],
+        trends: [...reportData.value.appointments.trends],
+      },
+      patients: {
+        byGender: [...reportData.value.patients.byGender],
+        byAgeGroup: [...reportData.value.patients.byAgeGroup],
+        registrationTrends: [...reportData.value.patients.registrationTrends],
+      },
+    };
+
+    // Save to Supabase
+    const newReport = await reportOps.createReport({
       Title: reportForm.value.title,
       Description: reportForm.value.description,
       ReportType: reportForm.value.type,
-      Data: reportForm.value.data,
+      Data: snapshotData,
       Parameters: {
-        ...reportForm.value.parameters,
-        dateRange: dateRange.value,
+        dateRange: { ...dateRange.value },
       },
-      DateTime: new Date().toISOString(),
-      GeneratedByNavigation: { fullName: "Current User" },
-    };
+    });
 
-    reportsList.value.unshift(newReport);
+    // Refresh the reports list from database
+    await fetchReportsList();
+
     showReportForm.value = false;
     resetReportForm();
+    alert("Report saved successfully! View it in 'Manage Reports' tab.");
   } catch (err) {
     error.value = "Failed to create report: " + err.message;
     console.error("Error creating report:", err);
@@ -336,9 +337,11 @@ const deleteReport = async (reportId) => {
   loading.value = true;
   error.value = null;
   try {
-    reportsList.value = reportsList.value.filter(
-      (r) => r.ReportID !== reportId,
-    );
+    // Delete from Supabase
+    await reportOps.deleteReport(reportId);
+
+    // Refresh the reports list from database
+    await fetchReportsList();
   } catch (err) {
     error.value = "Failed to delete report: " + err.message;
     console.error("Error deleting report:", err);
@@ -370,20 +373,70 @@ const resetReportForm = () => {
   editingReport.value = null;
 };
 
+// Toggle report details expansion
+const toggleReportDetails = (reportId) => {
+  if (expandedReportId.value === reportId) {
+    expandedReportId.value = null;
+  } else {
+    expandedReportId.value = reportId;
+  }
+};
+
+// Export a saved report
+const exportSavedReport = (report) => {
+  if (!report.Data) {
+    alert("This report has no data to export.");
+    return;
+  }
+
+  const exportData = {
+    reportTitle: report.Title,
+    reportDescription: report.Description,
+    reportType: report.ReportType,
+    generatedAt: report.CreatedAt,
+    generatedBy: report.GeneratedByNavigation?.fullName || "Admin",
+    dateRange: report.Parameters?.dateRange || {},
+    data: report.Data,
+  };
+
+  const content = JSON.stringify(exportData, null, 2);
+  const filename = `${report.Title.replace(/\s+/g, "_").toLowerCase()}_${new Date().toISOString().split("T")[0]}.json`;
+
+  const blob = new Blob([content], { type: "application/json" });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  window.URL.revokeObjectURL(url);
+};
+
 const exportReport = (format) => {
   let content = "";
   let filename = "";
   let mimeType = "";
 
+  // Prepare export data from current analytics
+  const exportData = {
+    generatedAt: new Date().toISOString(),
+    dateRange: {
+      start: dateRange.value.start,
+      end: dateRange.value.end,
+    },
+    overview: reportData.value.overview,
+    appointments: reportData.value.appointments,
+    patients: reportData.value.patients,
+  };
+
   switch (format) {
     case "csv":
-      content = convertToCSV(reportsList.value);
-      filename = `reports_${new Date().toISOString().split("T")[0]}.csv`;
+      content = convertAnalyticsToCSV(exportData);
+      filename = `clinic_analytics_${new Date().toISOString().split("T")[0]}.csv`;
       mimeType = "text/csv";
       break;
     case "json":
-      content = JSON.stringify(reportsList.value, null, 2);
-      filename = `reports_${new Date().toISOString().split("T")[0]}.json`;
+      content = JSON.stringify(exportData, null, 2);
+      filename = `clinic_analytics_${new Date().toISOString().split("T")[0]}.json`;
       mimeType = "application/json";
       break;
     default:
@@ -398,6 +451,74 @@ const exportReport = (format) => {
   link.download = filename;
   link.click();
   window.URL.revokeObjectURL(url);
+};
+
+// Convert analytics data to CSV format
+const convertAnalyticsToCSV = (data) => {
+  const lines = [];
+
+  // Header info
+  lines.push("Clinic Analytics Report");
+  lines.push(`Generated: ${data.generatedAt}`);
+  lines.push(`Date Range: ${data.dateRange.start} to ${data.dateRange.end}`);
+  lines.push("");
+
+  // Overview section
+  lines.push("=== OVERVIEW ===");
+  lines.push(`Total Patients,${data.overview.totalPatients}`);
+  lines.push(`Total Staff,${data.overview.totalStaff}`);
+  lines.push(`Total Appointments,${data.overview.totalAppointments}`);
+  lines.push(`Total Medical Records,${data.overview.totalRecords}`);
+  lines.push("");
+
+  // Appointment Status
+  lines.push("=== APPOINTMENTS BY STATUS ===");
+  lines.push("Status,Count");
+  data.appointments.byStatus.forEach((item) => {
+    lines.push(`${item.status},${item.count}`);
+  });
+  lines.push("");
+
+  // Appointment Types
+  lines.push("=== APPOINTMENTS BY TYPE ===");
+  lines.push("Type,Count");
+  data.appointments.byType.forEach((item) => {
+    lines.push(`${item.type},${item.count}`);
+  });
+  lines.push("");
+
+  // Appointment Trends
+  lines.push("=== APPOINTMENT TRENDS (6 MONTHS) ===");
+  lines.push("Month,Appointments");
+  data.appointments.trends.forEach((item) => {
+    lines.push(`${item.month},${item.appointments}`);
+  });
+  lines.push("");
+
+  // Patient Gender
+  lines.push("=== PATIENTS BY GENDER ===");
+  lines.push("Gender,Count");
+  data.patients.byGender.forEach((item) => {
+    lines.push(`${item.gender},${item.count}`);
+  });
+  lines.push("");
+
+  // Patient Age Groups
+  lines.push("=== PATIENTS BY AGE GROUP ===");
+  lines.push("Age Group,Count");
+  data.patients.byAgeGroup.forEach((item) => {
+    lines.push(`${item.group},${item.count}`);
+  });
+  lines.push("");
+
+  // Patient Registration Trends
+  lines.push("=== PATIENT REGISTRATION TRENDS ===");
+  lines.push("Month,Registrations");
+  data.patients.registrationTrends.forEach((item) => {
+    lines.push(`${item.month},${item.registrations}`);
+  });
+
+  return lines.join("\n");
 };
 
 const convertToCSV = (data) => {
@@ -1039,70 +1160,262 @@ onMounted(async () => {
           >
             <h5 class="mb-0">
               <i class="bi bi-file-earmark-text me-2"></i>
-              Reports Management
+              Saved Reports
             </h5>
             <span class="badge bg-primary"
               >{{ reportsList.length }} Reports</span
             >
           </div>
           <div class="card-body">
-            <!-- Reports Table -->
-            <div class="table-responsive">
-              <table class="table table-hover">
-                <thead class="table-light">
-                  <tr>
-                    <th>Title</th>
-                    <th>Type</th>
-                    <th>Generated By</th>
-                    <th>Created</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="report in reportsList" :key="report.ReportID">
-                    <td>
-                      <strong>{{ report.Title }}</strong>
-                      <br />
-                      <small class="text-muted">{{ report.Description }}</small>
-                    </td>
-                    <td>
+            <!-- No reports message -->
+            <div v-if="reportsList.length === 0" class="text-center py-5">
+              <i class="bi bi-file-earmark-x text-muted fs-1 mb-3 d-block"></i>
+              <h5 class="text-muted">No saved reports yet</h5>
+              <p class="text-muted mb-3">
+                Generate a report first, then click "Create Report" to save a
+                snapshot.
+              </p>
+              <button class="btn btn-primary" @click="showReportForm = true">
+                <i class="bi bi-plus-circle me-2"></i>
+                Create Your First Report
+              </button>
+            </div>
+
+            <!-- Reports list -->
+            <div v-else class="reports-list">
+              <div
+                v-for="report in reportsList"
+                :key="report.ReportID"
+                class="report-card mb-4 p-3 border rounded"
+              >
+                <!-- Report Header -->
+                <div
+                  class="d-flex justify-content-between align-items-start mb-3"
+                >
+                  <div>
+                    <h5 class="mb-1">
+                      <i
+                        class="bi bi-file-earmark-bar-graph me-2 text-primary"
+                      ></i>
+                      {{ report.Title }}
+                    </h5>
+                    <p class="text-muted mb-1 small">
+                      {{ report.Description }}
+                    </p>
+                    <div class="d-flex gap-3 text-muted small">
+                      <span>
+                        <i class="bi bi-calendar me-1"></i>
+                        {{ formatDate(report.CreatedAt) }}
+                      </span>
+                      <span>
+                        <i class="bi bi-person me-1"></i>
+                        {{ report.GeneratedByNavigation?.fullName || "Admin" }}
+                      </span>
                       <span class="badge bg-secondary">{{
                         report.ReportType
                       }}</span>
-                    </td>
-                    <td>
-                      {{ report.GeneratedByNavigation?.fullName || "Unknown" }}
-                    </td>
-                    <td>
-                      {{ formatDate(report.DateTime) }}
-                    </td>
-                    <td>
-                      <div class="btn-group btn-group-sm">
-                        <button
-                          class="btn btn-outline-primary"
-                          @click="editReport(report)"
-                          title="Edit Report"
-                        >
-                          <i class="bi bi-pencil"></i>
-                        </button>
-                        <button
-                          class="btn btn-outline-danger"
-                          @click="deleteReport(report.ReportID)"
-                          title="Delete Report"
-                        >
-                          <i class="bi bi-trash"></i>
-                        </button>
+                    </div>
+                  </div>
+                  <div class="btn-group btn-group-sm">
+                    <button
+                      class="btn btn-outline-info"
+                      @click="toggleReportDetails(report.ReportID)"
+                      :title="
+                        expandedReportId === report.ReportID
+                          ? 'Hide Details'
+                          : 'View Details'
+                      "
+                    >
+                      <i
+                        :class="
+                          expandedReportId === report.ReportID
+                            ? 'bi bi-chevron-up'
+                            : 'bi bi-eye'
+                        "
+                      ></i>
+                    </button>
+                    <button
+                      class="btn btn-outline-success"
+                      @click="exportSavedReport(report)"
+                      title="Export Report"
+                    >
+                      <i class="bi bi-download"></i>
+                    </button>
+                    <button
+                      class="btn btn-outline-danger"
+                      @click="deleteReport(report.ReportID)"
+                      title="Delete Report"
+                    >
+                      <i class="bi bi-trash"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Report Data Preview (always visible) -->
+                <div v-if="report.Data" class="row g-2 mb-2">
+                  <div class="col-md-3">
+                    <div class="stat-mini bg-light rounded p-2 text-center">
+                      <div class="fw-bold text-primary">
+                        {{ report.Data.overview?.totalPatients || 0 }}
                       </div>
-                    </td>
-                  </tr>
-                  <tr v-if="reportsList.length === 0">
-                    <td colspan="5" class="text-center py-4 text-muted">
-                      <i class="bi bi-file-earmark-x fs-1 d-block mb-2"></i>
-                      No reports found. Create your first report to get started.
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                      <small class="text-muted">Patients</small>
+                    </div>
+                  </div>
+                  <div class="col-md-3">
+                    <div class="stat-mini bg-light rounded p-2 text-center">
+                      <div class="fw-bold text-info">
+                        {{ report.Data.overview?.totalStaff || 0 }}
+                      </div>
+                      <small class="text-muted">Staff</small>
+                    </div>
+                  </div>
+                  <div class="col-md-3">
+                    <div class="stat-mini bg-light rounded p-2 text-center">
+                      <div class="fw-bold text-warning">
+                        {{ report.Data.overview?.totalAppointments || 0 }}
+                      </div>
+                      <small class="text-muted">Appointments</small>
+                    </div>
+                  </div>
+                  <div class="col-md-3">
+                    <div class="stat-mini bg-light rounded p-2 text-center">
+                      <div class="fw-bold text-success">
+                        {{ report.Data.overview?.totalRecords || 0 }}
+                      </div>
+                      <small class="text-muted">Records</small>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Expanded Report Details -->
+                <div
+                  v-if="expandedReportId === report.ReportID && report.Data"
+                  class="mt-3 pt-3 border-top"
+                >
+                  <div class="row g-3">
+                    <!-- Date Range -->
+                    <div class="col-12">
+                      <p class="text-muted small mb-2">
+                        <i class="bi bi-calendar-range me-1"></i>
+                        Report Date Range:
+                        {{ report.Parameters?.dateRange?.start || "N/A" }} to
+                        {{ report.Parameters?.dateRange?.end || "N/A" }}
+                      </p>
+                    </div>
+
+                    <!-- Appointments by Status -->
+                    <div class="col-md-6">
+                      <h6 class="mb-2">
+                        <i class="bi bi-pie-chart me-2"></i>Appointments by
+                        Status
+                      </h6>
+                      <ul class="list-unstyled small">
+                        <li
+                          v-for="item in report.Data.appointments?.byStatus ||
+                          []"
+                          :key="item.status"
+                          class="mb-1"
+                        >
+                          <span
+                            class="badge me-2"
+                            :style="{ backgroundColor: item.color }"
+                            >{{ item.count }}</span
+                          >
+                          {{ item.status }}
+                        </li>
+                        <li
+                          v-if="!report.Data.appointments?.byStatus?.length"
+                          class="text-muted"
+                        >
+                          No data
+                        </li>
+                      </ul>
+                    </div>
+
+                    <!-- Appointments by Type -->
+                    <div class="col-md-6">
+                      <h6 class="mb-2">
+                        <i class="bi bi-bar-chart me-2"></i>Appointments by Type
+                      </h6>
+                      <ul class="list-unstyled small">
+                        <li
+                          v-for="item in report.Data.appointments?.byType || []"
+                          :key="item.type"
+                          class="mb-1"
+                        >
+                          <span
+                            class="badge me-2"
+                            :style="{ backgroundColor: item.color }"
+                            >{{ item.count }}</span
+                          >
+                          {{ item.type }}
+                        </li>
+                        <li
+                          v-if="!report.Data.appointments?.byType?.length"
+                          class="text-muted"
+                        >
+                          No data
+                        </li>
+                      </ul>
+                    </div>
+
+                    <!-- Patients by Gender -->
+                    <div class="col-md-6">
+                      <h6 class="mb-2">
+                        <i class="bi bi-people me-2"></i>Patients by Gender
+                      </h6>
+                      <ul class="list-unstyled small">
+                        <li
+                          v-for="item in report.Data.patients?.byGender || []"
+                          :key="item.gender"
+                          class="mb-1"
+                        >
+                          <span
+                            class="badge me-2"
+                            :style="{ backgroundColor: item.color }"
+                            >{{ item.count }}</span
+                          >
+                          {{ item.gender }}
+                        </li>
+                        <li
+                          v-if="!report.Data.patients?.byGender?.length"
+                          class="text-muted"
+                        >
+                          No data
+                        </li>
+                      </ul>
+                    </div>
+
+                    <!-- Patients by Age Group -->
+                    <div class="col-md-6">
+                      <h6 class="mb-2">
+                        <i class="bi bi-bar-chart-steps me-2"></i>Patients by
+                        Age Group
+                      </h6>
+                      <ul class="list-unstyled small">
+                        <li
+                          v-for="item in report.Data.patients?.byAgeGroup || []"
+                          :key="item.group"
+                          class="mb-1"
+                        >
+                          <span
+                            class="badge me-2"
+                            :style="{ backgroundColor: item.color }"
+                            >{{ item.count }}</span
+                          >
+                          {{ item.group }} years
+                        </li>
+                        <li
+                          v-if="!report.Data.patients?.byAgeGroup?.length"
+                          class="text-muted"
+                        >
+                          No data
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1129,6 +1442,13 @@ onMounted(async () => {
             ></button>
           </div>
           <div class="modal-body">
+            <!-- Info about what Create Report does -->
+            <div v-if="!editingReport" class="alert alert-info small mb-3">
+              <i class="bi bi-info-circle me-2"></i>
+              <strong>Save a Snapshot:</strong> This will save the current
+              analytics data (using the date range: {{ dateRange.start }} to
+              {{ dateRange.end }}) as a report you can view later.
+            </div>
             <form
               @submit.prevent="editingReport ? updateReport() : createReport()"
             >
@@ -1165,7 +1485,7 @@ onMounted(async () => {
                   <option value="summary">Summary</option>
                   <option value="detailed">Detailed</option>
                   <option value="analytics">Analytics</option>
-                  <option value="custom">Custom</option>
+                  <!-- <option value="custom">Custom</option> -->
                 </select>
               </div>
               <div class="mb-3">
@@ -1233,6 +1553,30 @@ onMounted(async () => {
 .stats-card:hover {
   transform: translateY(-5px);
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+}
+
+/* Export dropdown z-index fix */
+.btn-group .dropdown-menu {
+  z-index: 1050;
+}
+
+/* Report card styles */
+.report-card {
+  transition: all 0.2s ease;
+  background: #fff;
+}
+
+.report-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-color: #dee2e6 !important;
+}
+
+.stat-mini {
+  transition: all 0.2s ease;
+}
+
+.stat-mini:hover {
+  transform: scale(1.02);
 }
 
 .stats-icon {
