@@ -1,5 +1,5 @@
 import { ref, computed } from "vue";
-import { supabase } from "../services/supabaseService.js";
+import { supabase, reportService } from "../services/supabaseService.js";
 import { useAuthStore } from "../stores/auth.js";
 
 export const useSupabase = () => {
@@ -488,6 +488,29 @@ export const useSupabase = () => {
         return true;
       });
     },
+
+    // Get pending requests
+    async getPendingRequests() {
+      await requireRole(["admin", "nurse"]);
+      return withLoading(async () => {
+        const { data, error } = await supabase
+          .from("Appointment")
+          .select(
+            `
+            *,
+            Patients(
+              *,
+              Users!inner(fullName)
+            )
+          `,
+          )
+          .eq("Status", "Pending")
+          .order("DateTime", { ascending: true });
+
+        if (error) throw error;
+        return data || [];
+      });
+    },
   };
 
   // Staff operations (admin only)
@@ -797,7 +820,6 @@ export const useSupabase = () => {
         const authStore = useAuthStore();
         const currentUser = authStore.user;
 
-        // Get the StaffID for the current user (EnteredBy is FK to Staff.StaffID)
         let enteredBy = null;
         const { data: staffData } = await supabase
           .from("Staff")
@@ -1028,6 +1050,13 @@ export const useSupabase = () => {
     async getOverviewStats(startDate, endDate) {
       await requireRole(["admin"]);
       return withLoading(async () => {
+        // If no date range provided, return total counts using reportService
+        if (!startDate && !endDate) {
+          const { data, error } = await reportService.getOverviewStats();
+          if (error) throw error;
+          return data;
+        }
+
         // Get patient count (filtered by registration date if created_at exists)
         const { count: patientsCount, error: patientsError } = await supabase
           .from("Patients")

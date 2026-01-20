@@ -85,7 +85,7 @@ export const patientService = {
         `
         *,
         Users(email)
-      `
+      `,
       )
       .order("created_at", { ascending: false });
 
@@ -100,7 +100,7 @@ export const patientService = {
         `
         *,
         Users(email)
-      `
+      `,
       )
       .eq("PatientID", id)
       .single();
@@ -190,7 +190,7 @@ export const medicalRecordService = {
         ),
         Diagnosis(*),
         Treatment(*)
-      `
+      `,
       )
       .order("created_at", { ascending: false });
 
@@ -214,7 +214,7 @@ export const medicalRecordService = {
         ),
         Diagnosis(*),
         Treatment(*)
-      `
+      `,
       )
       .eq("MedicalRecordID", id)
       .single();
@@ -244,7 +244,7 @@ export const medicalRecordService = {
         ),
         Diagnosis(*),
         Treatment(*)
-      `
+      `,
       )
       .eq("Patients.UserID", user.id)
       .order("created_at", { ascending: false });
@@ -262,7 +262,7 @@ export const medicalRecordService = {
         Diagnosis(diagnosisName),
         Treatment(treatmentName),
         Notes(notes)
-      `
+      `,
       )
       .eq("AppointmentID", appointmentId)
       .order("created_at", { ascending: false });
@@ -334,7 +334,7 @@ export const appointmentService = {
           *,
           Users!inner(email)
         )
-      `
+      `,
       )
       .order("DateTime", { ascending: true });
 
@@ -356,7 +356,7 @@ export const appointmentService = {
           *,
           Users!inner(email)
         )
-      `
+      `,
       )
       .eq("AppointmentID", id)
       .single();
@@ -381,7 +381,7 @@ export const appointmentService = {
           *,
           Users!inner(email)
         )
-      `
+      `,
       )
       .eq("Patients.UserID", user.id)
       .order("DateTime", { ascending: true });
@@ -406,7 +406,7 @@ export const appointmentService = {
           Users!inner(email)
         ),
         Staff!inner(*)
-      `
+      `,
       )
       .eq("Staff.UserID", user.id)
       .order("DateTime", { ascending: true });
@@ -459,6 +459,29 @@ export const appointmentService = {
 
     return { error };
   },
+
+  // Get pending appointments
+  getPendingAppointments: async () => {
+    const { data, error } = await supabase
+      .from("Appointment")
+      .select(
+        `
+        *,
+        Patients!inner(
+          *,
+          Users!inner(email)
+        ),
+        Staff!inner(
+          *,
+          Users!inner(email)
+        )
+      `,
+      )
+      .eq("Status", "Pending")
+      .order("DateTime", { ascending: true });
+
+    return { data, error };
+  },
 };
 
 // Staff services
@@ -473,13 +496,13 @@ export const staffService = {
       console.log(
         "✅ [staffService] API response:",
         response.data?.length,
-        "records"
+        "records",
       );
       return { data: response.data, error: null };
     } catch (error) {
       console.error(
         "⚠️ [staffService] API failed, using fallback:",
-        error.message
+        error.message,
       );
       // Fallback to direct Supabase query if API fails
       console.log("📡 [staffService] Querying Supabase directly...");
@@ -490,14 +513,14 @@ export const staffService = {
           *,
           Users (Email),
           Role (RoleName)
-        `
+        `,
         )
         .order("StaffID", { ascending: false });
       console.log(
         "📊 [staffService] Supabase result:",
         data?.length,
         "records, error:",
-        dbError
+        dbError,
       );
       return { data, error: dbError };
     }
@@ -562,7 +585,7 @@ export const notificationService = {
         `
         *,
         Users!inner(fullName)
-      `
+      `,
       )
       .order("created_at", { ascending: false });
 
@@ -702,7 +725,7 @@ export const realtimeService = {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "Patients" },
-        callback
+        callback,
       )
       .subscribe();
   },
@@ -714,7 +737,7 @@ export const realtimeService = {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "MedicalRecord" },
-        callback
+        callback,
       )
       .subscribe();
   },
@@ -726,7 +749,7 @@ export const realtimeService = {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "Appointment" },
-        callback
+        callback,
       )
       .subscribe();
   },
@@ -738,7 +761,7 @@ export const realtimeService = {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "Staff" },
-        callback
+        callback,
       )
       .subscribe();
   },
@@ -758,7 +781,7 @@ export const realtimeService = {
           if (user && payload.new.UserID === user.id) {
             callback(payload);
           }
-        }
+        },
       )
       .subscribe();
 
@@ -972,7 +995,7 @@ export const notesService = {
         `
         *,
         Staff!EnteredBy(FirstName, Surname)
-      `
+      `,
       )
       .eq("PatientID", patientId)
       .order("CreatedAt", { ascending: false });
@@ -989,7 +1012,7 @@ export const notesService = {
         *,
         Patients!PatientID(FirstName, Surname),
         Staff!EnteredBy(FirstName, Surname)
-      `
+      `,
       )
       .eq("NoteID", id)
       .single();
@@ -1042,6 +1065,34 @@ export const notesService = {
     const { error } = await supabase.from("Notes").delete().eq("NoteID", id);
 
     return { error };
+  },
+};
+
+// Report services
+export const reportService = {
+  // Get overview statistics
+  getOverviewStats: async () => {
+    try {
+      // Parallel fetch for counts
+      const [patients, staff, records] = await Promise.all([
+        supabase.from("Patients").select("*", { count: "exact", head: true }),
+        supabase.from("Staff").select("*", { count: "exact", head: true }),
+        supabase
+          .from("MedicalRecord")
+          .select("*", { count: "exact", head: true }),
+      ]);
+
+      return {
+        data: {
+          totalPatients: patients.count || 0,
+          totalStaff: staff.count || 0,
+          totalRecords: records.count || 0,
+        },
+        error: null,
+      };
+    } catch (error) {
+      return { data: null, error };
+    }
   },
 };
 

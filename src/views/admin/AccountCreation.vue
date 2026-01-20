@@ -17,13 +17,14 @@ const formErrors = ref({});
 const createdAccounts = ref([]);
 const accountHistory = ref([]);
 const loadingHistory = ref(false);
-const notify = useNotify();
+const { notify } = useNotify();
 const router = useRouter();
 const showPreviewModal = ref(false);
 const showSuccessModal = ref(false);
 const createdAccountForEmail = ref(null);
 const sendingCredentialsFromModal = ref(false);
 const credentialsSentFromModal = ref(false);
+const selectedAccount = ref(null);
 
 const accountForm = ref({
   username: "", // Auto-generated
@@ -37,16 +38,23 @@ const accountForm = ref({
   address: "",
   emergencyContactNumber: "",
   birthdate: null, // New birthdate field
-  generatedPassword: computed(() => {
-    if (accountForm.value.birthdate) {
-      const date = new Date(accountForm.value.birthdate);
-      const month = String(date.getMonth() + 1).padStart(2, "0");
-      const day = String(date.getDate()).padStart(2, "0");
-      const year = String(date.getFullYear()).slice(-2);
-      return `${month}-${day}-${year}`;
-    }
-    return "";
-  }),
+});
+
+// Computed property for generated password based on birthdate
+// Computed property for generated password (Surname_Firstname<last-4-digits-phone>)
+const generatedPassword = computed(() => {
+  const surname = accountForm.value.lastName || "";
+  const firstName = accountForm.value.firstName || "";
+  const contact = accountForm.value.contactNumber || "";
+
+  const cleanSurname = surname.trim().replace(/\s+/g, "");
+  const cleanFirstName = firstName.trim().replace(/\s+/g, "");
+  const cleanContact = contact.replace(/\D/g, "");
+  const lastFourDigits = cleanContact.slice(-4) || "0000";
+
+  if (!cleanSurname && !cleanFirstName) return "";
+
+  return `${cleanSurname}_${cleanFirstName}${lastFourDigits}`;
 });
 
 // Computed properties
@@ -194,6 +202,15 @@ const isFormValid = computed(() => {
 const previewCredentials = () => {
   formErrors.value = {};
   if (isFormValid.value) {
+    selectedAccount.value = {
+      firstName: accountForm.value.firstName,
+      lastName: accountForm.value.lastName,
+      email: accountForm.value.email,
+      role: accountForm.value.role,
+      username: generateUsername(),
+      password: generatedPassword.value,
+      isHistory: false,
+    };
     showPreviewModal.value = true;
   }
 };
@@ -239,7 +256,7 @@ const fetchCreatedAccounts = async () => {
         RoleName,
         fullName,
         created_at,
-        Patients!fk_users_patientid ( UserID, FirstName, Surname ),
+        Patients:Patients!Patients_UserID_fkey ( UserID, FirstName, Surname ),
         Staff ( UserID, FirstName, Surname )
       `);
 
@@ -249,7 +266,8 @@ const fetchCreatedAccounts = async () => {
 
     createdAccounts.value = users.map((user) => {
       const isPatient = user.RoleName === "patient";
-      const profile = isPatient ? user.Patients[0] : user.Staff[0];
+      // Safely access profile arrays which might be null
+      const profile = isPatient ? user.Patients?.[0] : user.Staff?.[0];
       return {
         id: user.UserID,
         type: isPatient ? "patient" : "staff",
@@ -277,12 +295,9 @@ const fetchCreatedAccounts = async () => {
 const fetchAccountCreationHistory = async (params = {}) => {
   loadingHistory.value = true;
   try {
-    const response = await api.get(
-      "/api/admin/accounts/account-creation-history",
-      {
-        params,
-      },
-    );
+    const response = await api.get("/admin/accounts/account-creation-history", {
+      params,
+    });
     accountHistory.value = response.data;
   } catch (error) {
     console.error("Error fetching account creation history:", error);
@@ -292,6 +307,48 @@ const fetchAccountCreationHistory = async (params = {}) => {
   } finally {
     loadingHistory.value = false;
   }
+};
+
+const exportHistory = () => {
+  try {
+    const headers = [
+      "Account Holder,Type,Username,Email,Role,Status,Created,Last Login",
+    ];
+    const rows = accountHistory.value.map((acc) => {
+      const lastLogin = acc.lastLogin
+        ? formatDateTime(acc.lastLogin).replace(/,/g, "")
+        : "Never";
+      return `"${acc.name}","${acc.type}","${acc.username}","${acc.email}","${acc.role}","${acc.status}","${formatDateTime(acc.createdAt).replace(/,/g, "")}","${lastLogin}"`;
+    });
+    const csvContent = headers.concat(rows).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute(
+      "download",
+      `account_history_${new Date().toISOString().split("T")[0]}.csv`,
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } catch (error) {
+    console.error("Export failed:", error);
+    notify("Failed to export history", { type: "error" });
+  }
+};
+
+const openPreviewModal = (account) => {
+  selectedAccount.value = {
+    firstName: account.firstName,
+    lastName: account.surname,
+    email: account.email,
+    role: account.role,
+    username: account.username,
+    password: "**************", // Masked for history
+    isHistory: true, // Flag to hide "Send" button if needed
+  };
+  showPreviewModal.value = true;
 };
 
 onMounted(async () => {
@@ -330,7 +387,7 @@ const sendCredentials = async (retryCount = 0) => {
       username: username,
       email: accountForm.value.email,
       role: accountForm.value.role,
-      password: accountForm.value.generatedPassword, // Pass the generated password
+      password: generatedPassword.value, // Pass the generated password
     });
 
     notify("Credentials sent successfully!", {
@@ -445,7 +502,7 @@ const createAccount = async (retryCount = 0) => {
       username: username,
       email: accountForm.value.email,
       role: accountForm.value.role,
-      password: accountForm.value.generatedPassword, // Include generated password
+      password: generatedPassword.value, // Include generated password
       firstName: accountForm.value.firstName,
       lastName: accountForm.value.lastName,
       suffix: accountForm.value.suffix,
@@ -460,15 +517,17 @@ const createAccount = async (retryCount = 0) => {
       // Note: Department and Specialty fields not supported in current schema
     }
 
-    const { data, error } = await api.post("/admin/accounts", payload);
+    const response = await api.post("/admin/accounts", payload);
 
-    if (error) throw error;
+    if (response.data?.error) {
+      throw new Error(response.data.error);
+    }
 
     notify("Account created successfully!", {
       type: "success",
       duration: 3000,
     });
-    createdAccountForEmail.value = data;
+    createdAccountForEmail.value = response.data?.user || response.data;
     showSuccessModal.value = true;
     resetForm();
     fetchCreatedAccounts(); // Refresh the list of created accounts
@@ -530,6 +589,7 @@ const navigateToDashboard = () => {
 
 const closeModals = () => {
   showPreviewModal.value = false;
+  selectedAccount.value = null;
 };
 
 const resetForm = () => {
@@ -545,7 +605,7 @@ const resetForm = () => {
     address: "",
     emergencyContactNumber: "",
     birthdate: null,
-    generatedPassword: "",
+    // Note: generatedPassword is a computed property, so we reset birthdate instead
   };
   formErrors.value = {};
 };
@@ -794,13 +854,13 @@ const resetForm = () => {
                     <input
                       type="text"
                       class="form-control"
-                      :value="accountForm.generatedPassword"
+                      :value="generatedPassword"
                       readonly
                     />
                     <button
                       class="btn btn-outline-secondary"
                       type="button"
-                      @click="copyToClipboard(accountForm.generatedPassword)"
+                      @click="copyToClipboard(generatedPassword)"
                     >
                       <i class="bi bi-clipboard"></i>
                     </button>
@@ -871,7 +931,10 @@ const resetForm = () => {
             Account Creation History
           </h5>
           <div class="d-flex gap-2">
-            <button class="btn btn-sm btn-outline-primary">
+            <button
+              class="btn btn-sm btn-outline-primary"
+              @click="exportHistory"
+            >
               <i class="bi bi-download me-1"></i>
               Export History
             </button>
@@ -962,6 +1025,7 @@ const resetForm = () => {
                         <button
                           class="btn btn-sm btn-outline-info"
                           title="View Details"
+                          @click="openPreviewModal(account)"
                         >
                           <i class="bi bi-eye"></i>
                         </button>
@@ -1024,7 +1088,7 @@ const resetForm = () => {
             ></button>
           </div>
           <div class="modal-body">
-            <div v-if="isFormValid">
+            <div v-if="selectedAccount">
               <!-- Account Preview -->
               <div class="mb-4">
                 <h6 class="fw-medium">
@@ -1034,21 +1098,22 @@ const resetForm = () => {
                 <div class="account-preview border rounded p-3 bg-light">
                   <div class="account-summary mb-3">
                     <h5 class="text-primary mb-2">
-                      {{ accountForm.firstName }} {{ accountForm.lastName }}
+                      {{ selectedAccount.firstName }}
+                      {{ selectedAccount.lastName }}
                     </h5>
                     <p class="mb-2">
-                      <strong>Email:</strong> {{ accountForm.email }}
+                      <strong>Email:</strong> {{ selectedAccount.email }}
                     </p>
                     <p class="mb-2">
-                      <strong>Role:</strong> {{ accountForm.role }}
+                      <strong>Role:</strong> {{ selectedAccount.role }}
                     </p>
                     <p class="mb-2">
-                      <strong>Username:</strong> {{ generateUsername() }}
+                      <strong>Username:</strong> {{ selectedAccount.username }}
                     </p>
                   </div>
 
                   <div
-                    v-if="accountForm.role === 'Patient'"
+                    v-if="selectedAccount.role === 'Patient'"
                     class="patient-details"
                   >
                     <h6 class="fw-medium">Patient Information:</h6>
@@ -1074,8 +1139,8 @@ const resetForm = () => {
                     <p>
                       Hello
                       <strong
-                        >{{ accountForm.firstName }}
-                        {{ accountForm.lastName }}</strong
+                        >{{ selectedAccount.firstName }}
+                        {{ selectedAccount.lastName }}</strong
                       >,
                     </p>
                     <p>
@@ -1083,11 +1148,14 @@ const resetForm = () => {
                       login details:
                     </p>
                     <div class="credentials-box p-3 bg-white rounded mb-3">
-                      <p><strong>Username:</strong> {{ generateUsername() }}</p>
-                      <p><strong>Email:</strong> {{ accountForm.email }}</p>
-                      <p><strong>Role:</strong> {{ accountForm.role }}</p>
+                      <p>
+                        <strong>Username:</strong>
+                        {{ selectedAccount.username }}
+                      </p>
+                      <p><strong>Email:</strong> {{ selectedAccount.email }}</p>
+                      <p><strong>Role:</strong> {{ selectedAccount.role }}</p>
                       <!-- <p>
-                        <strong>Password:</strong> {{ accountForm.password }}
+                        <strong>Password:</strong> {{ selectedAccount.password }}
                       </p> -->
                     </div>
                     <p>
@@ -1112,6 +1180,7 @@ const resetForm = () => {
               Close
             </button>
             <button
+              v-if="!selectedAccount?.isHistory"
               type="button"
               class="btn btn-primary"
               @click="sendCredentialsFromModal"

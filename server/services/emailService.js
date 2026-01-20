@@ -1,86 +1,4 @@
-import { google } from "googleapis";
-import { createRequire } from "module";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
-
-const require = createRequire(import.meta.url);
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Gmail API configuration
-const SCOPES = ["https://www.googleapis.com/auth/gmail.send"];
-const TOKEN_PATH = join(__dirname, "../../token.json");
-const CREDENTIALS_PATH = join(__dirname, "../../credentials.json");
-
-/**
- * Load client secrets from a local file.
- */
-async function loadCredentials() {
-  try {
-    const credentials = require(CREDENTIALS_PATH);
-    return credentials;
-  } catch (err) {
-    throw new Error(`Error loading client secret file: ${err.message}`);
-  }
-}
-
-/**
- * Create an OAuth2 client with the given credentials.
- */
-async function authorize() {
-  const credentials = await loadCredentials();
-  const { client_secret, client_id, redirect_uris } =
-    credentials.installed || credentials.web;
-  const oAuth2Client = new google.auth.OAuth2(
-    client_id,
-    client_secret,
-    redirect_uris[0]
-  );
-
-  // Check if we have previously stored a token.
-  try {
-    const token = require(TOKEN_PATH);
-    oAuth2Client.setCredentials(token);
-  } catch (err) {
-    throw new Error("Token not found. Please run the OAuth flow first.");
-  }
-
-  return oAuth2Client;
-}
-
-/**
- * Send an email using Gmail API
- */
-async function sendEmail(auth, to, subject, htmlContent, textContent) {
-  const gmail = google.gmail({ version: "v1", auth });
-
-  const messageParts = [
-    `To: ${to}`,
-    "Content-Type: text/html; charset=utf-8",
-    "MIME-Version: 1.0",
-    `Subject: ${subject}`,
-    "",
-    htmlContent,
-  ];
-
-  const message = messageParts.join("\n");
-
-  // The body needs to be base64url encoded.
-  const encodedMessage = Buffer.from(message)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-
-  const res = await gmail.users.messages.send({
-    userId: "me",
-    requestBody: {
-      raw: encodedMessage,
-    },
-  });
-
-  return res.data;
-}
+import nodemailer from "nodemailer";
 
 /**
  * Generate professional HTML email template for account credentials
@@ -189,9 +107,10 @@ function generateAccountCreationEmailTemplate(userData) {
             border-radius: 5px;
             margin: 20px 0;
             font-weight: bold;
+            opacity: 0.9;
         }
         .login-button:hover {
-            background-color: #0056b3;
+            opacity: 1;
         }
     </style>
 </head>
@@ -239,11 +158,7 @@ function generateAccountCreationEmailTemplate(userData) {
         <div class="important-note">
             <h4>🔐 Security Notice</h4>
             <p><strong>Please change your password immediately after your first login.</strong> This temporary password is for initial access only.</p>
-            <p>For security reasons, we recommend using a strong password with a combination of uppercase letters, lowercase letters, numbers, and special characters.</p>
-        </div>
-
-        <div style="text-align: center;">
-            <a href="#" class="login-button">Access Your Account</a>
+            <p>For security reasons, we recommend using a strong password.</p>
         </div>
 
         <div class="footer">
@@ -259,11 +174,61 @@ function generateAccountCreationEmailTemplate(userData) {
 }
 
 /**
+ * Create a nodemailer transporter based on configuration
+ */
+const createTransporter = async () => {
+  // 1. Production SMTP Configuration
+  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+    return nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: process.env.SMTP_PORT || 587,
+      secure: process.env.SMTP_SECURE === "true", // true for 465, false for other ports
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+  }
+
+  // 2. Gmail service (Simple Auth)
+  if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
+    return nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD,
+      },
+    });
+  }
+
+  // 3. Fallback: Ethereal Email (Development / Test)
+  // This creates a fake SMTP service with a preview URL
+  console.log(
+    "⚠️ No production email configured. Using Ethereal Email (Dev Mode)...",
+  );
+  try {
+    const testAccount = await nodemailer.createTestAccount();
+    return nodemailer.createTransport({
+      host: "smtp.ethereal.email",
+      port: 587,
+      secure: false,
+      auth: {
+        user: testAccount.user,
+        pass: testAccount.pass,
+      },
+    });
+  } catch (error) {
+    console.error("Failed to create Ethereal account:", error);
+    throw error;
+  }
+};
+
+/**
  * Send account creation email
  */
 export async function sendAccountCreationEmail(userData) {
   try {
-    const auth = await authorize();
+    const transporter = await createTransporter();
 
     const { firstName, surname, username, email, accountType, role, password } =
       userData;
@@ -288,17 +253,27 @@ Best regards,
 Baan KM-3 Health Center Information System
     `.trim();
 
-    const result = await sendEmail(
-      auth,
-      email,
-      subject,
-      htmlContent,
-      textContent
-    );
+    // Send mail with defined transport object
+    const info = await transporter.sendMail({
+      from: '"Baan KM-3 Health Center" <noreply@baankm3.com>', // sender address
+      to: email, // list of receivers
+      subject: subject, // Subject line
+      text: textContent, // plain text body
+      html: htmlContent, // html body
+    });
 
-    return { success: true, messageId: result.id };
+    console.log("✅ Email sent: %s", info.messageId);
+
+    // If using Ethereal, log the preview URL
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+    if (previewUrl) {
+      console.log("📬 Preview URL: %s", previewUrl);
+      console.log("   (Click the URL above to view the sent email)");
+    }
+
+    return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error("Error sending email:", error.message);
+    console.error("❌ Error sending email:", error.message);
     throw new Error(`Failed to send account creation email: ${error.message}`);
   }
 }

@@ -215,4 +215,4 @@ For issues with Supabase setup, check:
 - [Supabase Discord](https://discord.supabase.com)
 
 SEED:
-node src/supabase/seed-auth-users.js
+node src/supabase/seeders/seed.js

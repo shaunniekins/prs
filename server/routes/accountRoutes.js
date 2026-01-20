@@ -1,19 +1,23 @@
 import express from "express";
-import { userService, supabase } from "../services/supabaseService.js";
+import {
+  userService,
+  supabase,
+  supabaseAdmin,
+} from "../services/supabaseService.js";
 
 const router = express.Router();
 
 // GET /api/admin/account-creation-history
 router.get("/account-creation-history", async (req, res) => {
   try {
-    const { data: users, error } = await supabase.from("Users").select(`
+    const { data: users, error } = await supabaseAdmin.from("Users").select(`
         UserID,
         Username,
         Email,
         RoleName,
         fullName,
         created_at,
-        Patients!fk_users_patientid ( UserID, FirstName, Surname ),
+        Patients:Patients!Patients_UserID_fkey ( UserID, FirstName, Surname ),
         Staff ( UserID, FirstName, Surname )
       `);
 
@@ -21,9 +25,25 @@ router.get("/account-creation-history", async (req, res) => {
       throw error;
     }
 
+    // Fetch auth users to get last login info
+    const {
+      data: { users: authUsers },
+      error: authError,
+    } = await supabaseAdmin.auth.admin.listUsers();
+    if (authError) {
+      console.error("Error fetching auth users:", authError);
+    }
+
+    const authMap = new Map();
+    if (authUsers) {
+      authUsers.forEach((u) => authMap.set(u.id, u));
+    }
+
     const accountHistory = users.map((user) => {
       const isPatient = user.RoleName === "patient";
-      const profile = isPatient ? user.Patients[0] : user.Staff[0];
+      const profile = isPatient ? user.Patients?.[0] : user.Staff?.[0]; // Safe access using array result
+      const authUser = authMap.get(user.UserID);
+
       return {
         id: user.UserID,
         type: isPatient ? "patient" : "staff",
@@ -33,17 +53,20 @@ router.get("/account-creation-history", async (req, res) => {
         username: user.Username,
         email: user.Email,
         role: user.RoleName,
-        status: "active", // Assuming all fetched accounts are active
+        status: "Active", // Assuming all fetched accounts are active
         createdAt: user.created_at,
-        credentialsSent: false, // This information is not stored in the DB
-        lastLogin: null, // This information is not available
+        credentialsSent: "Email", // User requested specific placeholder
+        lastLogin: authUser?.last_sign_in_at || null,
       };
     });
 
     res.status(200).json(accountHistory);
   } catch (error) {
     console.error("Error fetching account creation history:", error);
-    res.status(500).json({ message: "Internal server error" });
+    res.status(500).json({
+      message: error.message || "Internal server error",
+      details: error,
+    });
   }
 });
 
