@@ -1,105 +1,96 @@
-import express from 'express';
+import express from "express";
+import { patientService } from "../services/supabaseService.js";
 
 const router = express.Router();
 
-// Mock data - in a real app, this would come from a database
-let patients = [];
-
-// Load patients from localStorage if available (for development only)
-if (typeof localStorage !== 'undefined') {
-  try {
-    const savedPatients = localStorage.getItem('patientRecords');
-    if (savedPatients) {
-      patients = JSON.parse(savedPatients);
-    }
-  } catch (error) {
-    console.error('Error loading patients from localStorage:', error);
-  }
-}
-
 // Get all patients
-router.get('/', (req, res) => {
-  res.status(200).json(patients);
+router.get("/", async (req, res) => {
+  try {
+    const { data, error } = await patientService.getAllPatients();
+    if (error) {
+      console.error("Error fetching patients:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+    res.status(200).json(data);
+  } catch (error) {
+    console.error("Error fetching patients:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
 });
 
 // Get patient by ID
-router.get('/:id', (req, res) => {
-  const patient = patients.find(p => p.id === req.params.id);
-  if (!patient) {
-    return res.status(404).json({ message: 'Patient not found' });
+router.get("/:id", async (req, res) => {
+  try {
+    const { data, error } = await patientService.getPatientById(req.params.id);
+
+    if (error) {
+      console.error("Error fetching patient:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+
+    if (!data) {
+      return res.status(404).json({ message: "Patient not found" });
+    }
+
+    res.status(200).json(data);
+  } catch (error) {
+    console.error("Error fetching patient:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
-  res.status(200).json(patient);
 });
 
 // Create new patient
-router.post('/', (req, res) => {
-  const newPatient = {
-    id: Date.now().toString(),
-    ...req.body,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-  
-  patients.push(newPatient);
-  
-  // Save to localStorage (for development only)
-  if (typeof localStorage !== 'undefined') {
-    try {
-      localStorage.setItem('patientRecords', JSON.stringify(patients));
-    } catch (error) {
-      console.error('Error saving to localStorage:', error);
+router.post("/", async (req, res) => {
+  try {
+    const { data, error } = await patientService.createPatient(req.body);
+
+    if (error) {
+      console.error("Error creating patient:", error);
+      return res.status(500).json({ message: "Internal server error" });
     }
+
+    res.status(201).json(data);
+  } catch (error) {
+    console.error("Error creating patient:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
-  
-  res.status(201).json(newPatient);
 });
 
 // Update patient
-router.put('/:id', (req, res) => {
-  const index = patients.findIndex(p => p.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ message: 'Patient not found' });
-  }
-  
-  const updatedPatient = {
-    ...patients[index],
-    ...req.body,
-    updatedAt: new Date().toISOString()
-  };
-  
-  patients[index] = updatedPatient;
-  
-  // Save to localStorage (for development only)
-  if (typeof localStorage !== 'undefined') {
-    try {
-      localStorage.setItem('patientRecords', JSON.stringify(patients));
-    } catch (error) {
-      console.error('Error saving to localStorage:', error);
+router.put("/:id", async (req, res) => {
+  try {
+    const { data, error } = await patientService.updatePatient(
+      req.params.id,
+      req.body
+    );
+
+    if (error) {
+      console.error("Error updating patient:", error);
+      return res.status(500).json({ message: "Internal server error" });
     }
+
+    res.status(200).json(data);
+  } catch (error) {
+    console.error("Error updating patient:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
-  
-  res.status(200).json(updatedPatient);
 });
 
 // Delete patient
-router.delete('/:id', (req, res) => {
-  const index = patients.findIndex(p => p.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ message: 'Patient not found' });
-  }
-  
-  patients.splice(index, 1);
-  
-  // Save to localStorage (for development only)
-  if (typeof localStorage !== 'undefined') {
-    try {
-      localStorage.setItem('patientRecords', JSON.stringify(patients));
-    } catch (error) {
-      console.error('Error saving to localStorage:', error);
+router.delete("/:id", async (req, res) => {
+  try {
+    const { error } = await patientService.deletePatient(req.params.id);
+
+    if (error) {
+      console.error("Error deleting patient:", error);
+      return res.status(500).json({ message: "Internal server error" });
     }
+
+    res.status(200).json({ message: "Patient deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting patient:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
-  
-  res.status(200).json({ message: 'Patient deleted successfully' });
 });
 
 export default router;

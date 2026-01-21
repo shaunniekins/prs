@@ -1,5 +1,3 @@
-import { createRouter, createWebHistory } from "vue-router";
-
 // Admin Views
 import AdminDashboard from "../views/admin/Dashboard.vue";
 import ManageStaff from "../views/admin/ManageStaff.vue";

@@ -1,110 +1,119 @@
 import express from "express";
+import { userService } from "../services/supabaseService.js";
 
 const router = express.Router();
 
-import User from '../models/User.js';
-
-// Mock users data - in a real app, this would come from a database
-const users = [
-  new User({
-    username: 'admin',
-    password: 'admin123',
-    role: 'admin',
-    fullName: 'Admin User',
-  }),
-  new User({
-    username: 'nurse',
-    password: 'nurse123',
-    role: 'nurse',
-    fullName: 'Nurse Mike Chen',
-  }),
-  new User({
-    username: 'patient',
-    password: 'patient123',
-    role: 'patient',
-    fullName: 'Patient John Doe',
-  }),
-];
-
 // Login route
-router.post('/login', (req, res) => {
-  const { username, password } = req.body;
+router.post("/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
 
-  if (!username || !password) {
-    return res
-      .status(400)
-      .json({ message: 'Username and password are required' });
-  }
+    if (!email || !password) {
+      return res
+        .status(400)
+        .json({ message: "Email and password are required" });
+    }
 
-  // Find user by username and password
-  const user = User.authenticate(username, password, users);
+    // Authenticate with Supabase
+    const { data, error } = await userService.authenticateUser(email, password);
 
-  if (user) {
-    // In a real app, you would generate a JWT token here
+    if (error || !data.user) {
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    // Get user profile from Users table
+    const { data: profile, error: profileError } =
+      await userService.getUserProfile(data.user.id);
+
+    if (profileError) {
+      console.error("Error fetching user profile:", profileError);
+      return res.status(500).json({ message: "Error fetching user profile" });
+    }
+
+    // Return user data with JWT token
     const userData = {
-      username: user.username,
-      role: user.role,
-      fullName: user.fullName || user.username,
-      token: 'mock-jwt-token', // Mock token
+      id: data.user.id,
+      email: data.user.email,
+      role: profile?.Role?.RoleName || "patient",
+      fullName: profile?.fullName || data.user.user_metadata?.firstName || "",
+      accessToken: data.session?.access_token,
+      refreshToken: data.session?.refresh_token,
     };
 
     res.status(200).json(userData);
-  } else {
-    res.status(401).json({ message: 'Invalid username or password' });
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
-});
-
-// Register route
-router.post('/register', (req, res) => {
-  const { username, password, role, fullName, email } = req.body;
-
-  // Basic validation
-  if (!username || !password) {
-    return res
-      .status(400)
-      .json({ message: 'Username and password are required' });
-  }
-
-  if (password.length < 6) {
-    return res
-      .status(400)
-      .json({ message: 'Password must be at least 6 characters long' });
-  }
-
-  // Check if username already exists
-  if (User.findByUsername(username, users)) {
-    return res.status(409).json({ message: 'Username already exists' });
-  }
-
-  // Add the new user
-  const newUser = {
-    username,
-    password, // In a real app, this would be hashed
-    role: role || 'patient',
-    fullName: fullName || '',
-    email: email || '',
-  };
-
-  User.create(newUser, users);
-
-  res.status(201).json({ message: 'Registration successful' });
 });
 
 // Get all users (admin only)
-router.get('/', (req, res) => {
-  // In a real app, you would check for admin authorization here
-  // For simplicity, we're returning all users without sensitive info
-  const allUsers = User.getAll(users);
-  const safeUsers = allUsers
-    .filter((user) => user.role !== 'admin') // Don't include admin in user lists
-    .map(({ username, role, fullName, email }) => ({
-      username,
-      role,
-      fullName,
-      email,
-    }));
+router.get("/", async (req, res) => {
+  try {
+    // TODO: Add admin authorization check using JWT token from headers
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).json({ message: "Authorization required" });
+    }
 
-  res.status(200).json(safeUsers);
+    const token = authHeader.substring(7);
+
+    // Verify token and get user
+    const { data: userData, error: userError } =
+      await userService.getCurrentUser(token);
+    if (userError || !userData.user) {
+      return res.status(401).json({ message: "Invalid token" });
+    }
+
+    // Check if user is admin
+    const { data: profile } = await userService.getUserProfile(
+      userData.user.id
+    );
+    if (profile?.Role?.RoleName !== "admin") {
+      return res.status(403).json({ message: "Admin access required" });
+    }
+
+    // Get all users
+    const { data, error } = await userService.getAllUsers();
+
+    if (error) {
+      console.error("Error fetching users:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+
+    // Filter out sensitive information and admin users from response
+    const safeUsers = data
+      .filter((user) => user.Role?.RoleName !== "admin")
+      .map(({ UserID, fullName, email, Role, created_at }) => ({
+        id: UserID,
+        fullName,
+        email,
+        role: Role?.RoleName,
+        createdAt: created_at,
+      }));
+
+    res.status(200).json(safeUsers);
+  } catch (error) {
+    console.error("Error fetching users:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// Logout route
+router.post("/logout", async (req, res) => {
+  try {
+    const { error } = await userService.signOut();
+
+    if (error) {
+      console.error("Logout error:", error);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+
+    res.status(200).json({ message: "Logout successful" });
+  } catch (error) {
+    console.error("Logout error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
 });
 
 export default router;

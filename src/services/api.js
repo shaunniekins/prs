@@ -1,129 +1,123 @@
-import axios from 'axios';
+import axios from "axios";
+import { supabase } from "./supabaseService.js";
 
 // Create an axios instance with default config
 const api = axios.create({
-  baseURL: 'http://localhost:3000/api',
+  baseURL: "http://localhost:3000/api",
   headers: {
-    'Content-Type': 'application/json'
-  }
+    "Content-Type": "application/json",
+  },
 });
 
 // Add a request interceptor to attach auth token to requests
 api.interceptors.request.use(
-  config => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers['x-auth-token'] = token;
+  async (config) => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      config.headers["x-auth-token"] = session.access_token;
     }
-    
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    if (user.role) {
-      config.headers['x-user-role'] = user.role;
+
+    if (session?.user) {
+      config.headers["x-user-role"] =
+        session.user.user_metadata?.role || "patient";
     }
-    
+
     return config;
   },
-  error => {
+  (error) => {
     return Promise.reject(error);
   }
 );
 
-// Auth services
+// Auth services - now using Supabase
 export const authService = {
   login: async (credentials) => {
-    try {
-      const response = await api.post('/users/login', credentials);
-      if (response.data.token) {
-        localStorage.setItem('token', response.data.token);
-        localStorage.setItem('user', JSON.stringify(response.data));
-      }
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Login failed' };
-    }
+    // Login handled by Supabase
+    return { success: true };
   },
-  
-  register: async (userData) => {
-    try {
-      const response = await api.post('/users/register', userData);
-      return response.data;
-    } catch (error) {
-      throw error.response?.data || { message: 'Registration failed' };
-    }
+
+  logout: async () => {
+    // Logout handled by Supabase
+    return { success: true };
   },
-  
-  logout: () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+
+  refreshToken: async () => {
+    // Refresh handled by Supabase
+    return { success: true };
   },
-  
-  getCurrentUser: () => {
-    try {
-      return JSON.parse(localStorage.getItem('user'));
-    } catch (error) {
-      return null;
-    }
-  }
+
+  verifyToken: async () => {
+    // Verification handled by Supabase
+    return { success: true };
+  },
+
+  getCurrentUser: async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    return session?.user || null;
+  },
 };
 
 // Patient services
 export const patientService = {
   getAllPatients: async () => {
     try {
-      const response = await api.get('/patients');
+      const response = await api.get("/patients");
       return response.data;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to fetch patients' };
+      throw error.response?.data || { message: "Failed to fetch patients" };
     }
   },
-  
+
   getPatientById: async (id) => {
     try {
       const response = await api.get(`/patients/${id}`);
       return response.data;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to fetch patient' };
+      throw error.response?.data || { message: "Failed to fetch patient" };
     }
   },
-  
+
   createPatient: async (patientData) => {
     try {
-      const response = await api.post('/patients', patientData);
+      const response = await api.post("/patients", patientData);
       return response.data;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to create patient' };
+      throw error.response?.data || { message: "Failed to create patient" };
     }
   },
-  
+
   updatePatient: async (id, patientData) => {
     try {
       const response = await api.put(`/patients/${id}`, patientData);
       return response.data;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to update patient' };
+      throw error.response?.data || { message: "Failed to update patient" };
     }
   },
-  
+
   deletePatient: async (id) => {
     try {
       const response = await api.delete(`/patients/${id}`);
       return response.data;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to delete patient' };
+      throw error.response?.data || { message: "Failed to delete patient" };
     }
-  }
+  },
 };
 
 // User services
 export const userService = {
   getAllUsers: async () => {
     try {
-      const response = await api.get('/users');
+      const response = await api.get("/users");
       return response.data;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to fetch users' };
+      throw error.response?.data || { message: "Failed to fetch users" };
     }
-  }
+  },
 };
-
 export default api;

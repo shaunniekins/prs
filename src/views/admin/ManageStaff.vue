@@ -1,9 +1,14 @@
 <script setup>
-import { ref, computed, onMounted } from "vue";
-import { useStore } from "vuex";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
+import {
+  staffService,
+  realtimeService,
+} from "../../services/supabaseService.js";
+import { useAuthStore } from "../../stores/auth.js";
+import api from "../../services/api.js";
 
-// Store
-const store = useStore();
+// Auth store
+const authStore = useAuthStore();
 
 // Reactive data
 const loading = ref(false);
@@ -21,33 +26,198 @@ const staffForm = ref({
   suffix: "",
   contactNumber: "",
   email: "",
-  role: "",
+  role: "nurse",
+  status: "Active",
+});
+
+// Form validation
+const formErrors = ref({});
+const isFormValid = computed(() => {
+  return (
+    staffForm.value.firstName &&
+    staffForm.value.surname &&
+    staffForm.value.contactNumber &&
+    staffForm.value.role
+  );
 });
 
 // Computed properties
-const user = computed(() => store.state.user);
 const filteredStaff = computed(() => {
-  return staffList.value.filter(
-    (staff) =>
-      staff.firstName.toLowerCase().includes(search.value.toLowerCase()) ||
-      staff.surname.toLowerCase().includes(search.value.toLowerCase()) ||
-      staff.email.toLowerCase().includes(search.value.toLowerCase()) ||
-      staff.role.toLowerCase().includes(search.value.toLowerCase())
-  );
+  if (!staffList.value.length) return [];
+
+  const searchTerm = search.value.toLowerCase().trim();
+
+  if (!searchTerm) {
+    return staffList.value;
+  }
+
+  return staffList.value.filter((staff) => {
+    // Search in multiple fields with enhanced matching
+    const searchableFields = [
+      staff.firstName,
+      staff.surname,
+      staff.email,
+      staff.role,
+      staff.contactNumber,
+      staff.status,
+      staff.suffix,
+    ];
+
+    return searchableFields.some((field) =>
+      field?.toLowerCase().includes(searchTerm),
+    );
+  });
 });
+
+// Additional computed properties for better filtering
+const staffByRole = computed(() => {
+  const roleFilter = staffForm.value.role;
+  if (!roleFilter || roleFilter === "") return staffList.value;
+  return staffList.value.filter((staff) => staff.role === roleFilter);
+});
+
+const activeStaffCount = computed(
+  () => staffList.value.filter((staff) => staff.status === "Active").length,
+);
+
+const totalStaffCount = computed(() => staffList.value.length);
+
+// Simple loading state
+const isLoading = computed(() => loading.value);
+
+// Error message computed property
+const errorMessage = ref("");
+
+// Admin access check using useAuth composable
 
 // Methods
 const fetchStaff = async () => {
   loading.value = true;
   try {
-    // Simulate API call - replace with actual API call
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    // Mock data is already loaded
+    // Fetch staff data from the service
+
+    const response = await staffService.getAllStaff();
+
+    // Format the data for display
+    staffList.value = (response.data || []).map((staff) => ({
+      id: staff.StaffID,
+      userId: staff.UserID,
+      firstName: staff.FirstName,
+      surname: staff.Surname,
+      suffix: staff.Suffix,
+      contactNumber: staff.ContactNumber,
+      email: staff.Users?.Email,
+      role: staff.Role?.RoleName || staff.role, // Fallback if regular field exists
+      status: staff.IsActive ? "Active" : "Inactive",
+      dateJoined: staff.created_at
+        ? new Date(staff.created_at).toLocaleDateString()
+        : new Date().toLocaleDateString(),
+      lastLogin: staff.Users?.last_sign_in_at || null, // From Supabase auth
+      // Check if this is the system administrator (first admin account)
+      isSystemAdmin:
+        (staff.Role?.RoleName || staff.role)?.toLowerCase() === "admin" &&
+        staff.Users?.Email === "admin@clinic.com",
+    }));
   } catch (error) {
-    console.error("Error fetching staff:", error);
+    console.error("❌ Error loading staff:", error);
+    errorMessage.value = "Failed to load staff data. Please try again.";
+
+    // Clear staff list on error to prevent showing stale data
+    staffList.value = [];
   } finally {
     loading.value = false;
   }
+};
+
+// Form validation methods
+const validateForm = () => {
+  formErrors.value = {};
+  let isValid = true;
+
+  // First name validation
+  if (!staffForm.value.firstName.trim()) {
+    formErrors.value.firstName = "First name is required";
+    isValid = false;
+  } else if (staffForm.value.firstName.trim().length < 2) {
+    formErrors.value.firstName = "First name must be at least 2 characters";
+    isValid = false;
+  } else if (!/^[a-zA-Z\s\-'\.]+$/.test(staffForm.value.firstName.trim())) {
+    formErrors.value.firstName =
+      "First name can only contain letters, spaces, hyphens, apostrophes, and periods";
+    isValid = false;
+  }
+
+  // Surname validation
+  if (!staffForm.value.surname.trim()) {
+    formErrors.value.surname = "Surname is required";
+    isValid = false;
+  } else if (staffForm.value.surname.trim().length < 2) {
+    formErrors.value.surname = "Surname must be at least 2 characters";
+    isValid = false;
+  } else if (!/^[a-zA-Z\s\-'\.]+$/.test(staffForm.value.surname.trim())) {
+    formErrors.value.surname =
+      "Surname can only contain letters, spaces, hyphens, apostrophes, and periods";
+    isValid = false;
+  }
+
+  // Contact number validation
+  if (!staffForm.value.contactNumber.trim()) {
+    formErrors.value.contactNumber = "Contact number is required";
+    isValid = false;
+  } else if (staffForm.value.contactNumber.trim().length < 10) {
+    formErrors.value.contactNumber =
+      "Contact number must be at least 10 digits";
+    isValid = false;
+  } else if (!/^\+?[\d\s\-\(\)]+$/.test(staffForm.value.contactNumber.trim())) {
+    formErrors.value.contactNumber =
+      "Please enter a valid contact number (digits, spaces, hyphens, parentheses, and + only)";
+    isValid = false;
+  }
+
+  // Email validation (required for staff account creation)
+  if (!staffForm.value.email || !staffForm.value.email.trim()) {
+    formErrors.value.email = "Email is required for staff account creation";
+    isValid = false;
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(staffForm.value.email.trim())) {
+    formErrors.value.email =
+      "Please enter a valid email address (e.g., name@example.com)";
+    isValid = false;
+  } else if (staffForm.value.email.trim().length > 254) {
+    formErrors.value.email =
+      "Email address is too long (maximum 254 characters)";
+    isValid = false;
+  }
+
+  // Role validation
+  if (!staffForm.value.role) {
+    formErrors.value.role = "Role is required";
+    isValid = false;
+  } else if (
+    ![
+      "nurse",
+      "Nurse",
+      // "barangay health worker",
+      "admin",
+      "Admin",
+    ].includes(staffForm.value.role)
+  ) {
+    formErrors.value.role = "Please select a valid role";
+    isValid = false;
+  }
+
+  // Suffix validation (optional but with constraints if provided)
+  if (staffForm.value.suffix && staffForm.value.suffix.trim()) {
+    if (staffForm.value.suffix.trim().length > 20) {
+      formErrors.value.suffix = "Suffix must be 20 characters or less";
+      isValid = false;
+    } else if (!/^[a-zA-Z\s\.]+$/.test(staffForm.value.suffix.trim())) {
+      formErrors.value.suffix =
+        "Suffix can only contain letters, spaces, and periods";
+      isValid = false;
+    }
+  }
+
+  return isValid;
 };
 
 const resetForm = () => {
@@ -57,8 +227,10 @@ const resetForm = () => {
     suffix: "",
     contactNumber: "",
     email: "",
-    role: "",
+    role: "nurse",
+    status: "Active",
   };
+  formErrors.value = {};
 };
 
 const openAddModal = () => {
@@ -68,12 +240,43 @@ const openAddModal = () => {
 };
 
 const openEditModal = (staff) => {
+  if (!staff || !staff.id) {
+    alert("Invalid staff member selected");
+    return;
+  }
+
   selectedStaff.value = staff;
-  staffForm.value = { ...staff };
+
+  // Normalize role to match select option values (capitalize first letter)
+  const normalizeRole = (role) => {
+    if (!role) return "Nurse";
+    const roleLower = role.toLowerCase();
+    if (roleLower === "nurse") return "Nurse";
+    if (roleLower === "admin") return "Admin";
+    return "Nurse"; // Default fallback
+  };
+
+  staffForm.value = {
+    firstName: staff.firstName || "",
+    surname: staff.surname || "",
+    suffix: staff.suffix || "",
+    contactNumber: staff.contactNumber || "",
+    email: staff.email || "",
+    role: normalizeRole(staff.role),
+    status: staff.status || "Active",
+  };
+  formErrors.value = {};
   showEditModal.value = true;
 };
 
 const openDeleteModal = (staff) => {
+  // Prevent deletion of system administrator account
+  if (staff.isSystemAdmin) {
+    alert(
+      "Cannot delete the system administrator account. This account is protected.",
+    );
+    return;
+  }
   selectedStaff.value = staff;
   showDeleteModal.value = true;
 };
@@ -86,62 +289,170 @@ const closeModals = () => {
   resetForm();
 };
 
-const addStaff = async () => {
-  try {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 500));
+// Generate default password: Surname_Firstname<last-4-digits-of-contact>
+const generateDefaultPassword = (surname, firstName, contactNumber) => {
+  const cleanSurname = surname.trim().replace(/\s+/g, "");
+  const cleanFirstName = firstName.trim().replace(/\s+/g, "");
+  const cleanContact = contactNumber.replace(/\D/g, ""); // Remove non-digits
+  const lastFourDigits = cleanContact.slice(-4) || "0000";
+  return `${cleanSurname}_${cleanFirstName}${lastFourDigits}`;
+};
 
-    const newStaff = {
-      id: Math.max(...staffList.value.map((s) => s.id), 0) + 1,
-      userId: Math.max(...staffList.value.map((s) => s.userId), 0) + 1,
-      ...staffForm.value,
-      status: "Active",
-      dateJoined: new Date().toISOString().split("T")[0],
-      lastLogin: null,
+// Generate username from first name and surname
+const generateUsername = (firstName, surname) => {
+  const first = firstName.toLowerCase().replace(/[^a-z]/g, "");
+  const last = surname.toLowerCase().replace(/[^a-z]/g, "");
+  return `${first}.${last}`;
+};
+
+const addStaff = async () => {
+  if (!validateForm()) {
+    return;
+  }
+
+  loading.value = true;
+
+  try {
+    const firstName = staffForm.value.firstName.trim();
+    const surname = staffForm.value.surname.trim();
+    const contactNumber = staffForm.value.contactNumber.trim();
+    const email = staffForm.value.email.trim();
+
+    // Generate default password: Surname_Firstname<last-4-digits-of-contact>
+    const generatedPassword = generateDefaultPassword(
+      surname,
+      firstName,
+      contactNumber,
+    );
+    const username = generateUsername(firstName, surname);
+
+    // Map role to expected format
+    const roleMap = {
+      nurse: "Nurse",
+      admin: "Admin",
+      Nurse: "Nurse",
+      Admin: "Admin",
+    };
+    const role = roleMap[staffForm.value.role] || "Nurse";
+
+    // Prepare payload for the account creation API
+    const payload = {
+      username: username,
+      email: email,
+      role: role,
+      password: generatedPassword,
+      firstName: firstName,
+      lastName: surname,
+      suffix: staffForm.value.suffix.trim() || "",
+      contactNumber: contactNumber,
     };
 
-    staffList.value.push(newStaff);
+    // Create staff account using the server API
+    const response = await api.post("/admin/accounts", payload);
+
+    if (response.data?.error) {
+      throw new Error(response.data.error);
+    }
+
+    // Refresh the staff list
+    await fetchStaff();
     closeModals();
 
-    // Show success message
-    // You can use the notification system here
-    console.log("Staff added successfully");
+    // Show success message with generated credentials
+    alert(
+      `Staff member created successfully!\n\nUsername: ${username}\nDefault Password: ${generatedPassword}\n\nPlease share these credentials with the staff member securely.`,
+    );
   } catch (error) {
     console.error("Error adding staff:", error);
+    const errorMsg =
+      error.response?.data?.message ||
+      error.message ||
+      "Failed to add staff member. Please try again.";
+    errorMessage.value = errorMsg;
+    alert(errorMsg);
+  } finally {
+    loading.value = false;
   }
 };
 
 const updateStaff = async () => {
-  try {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 500));
+  if (!validateForm()) {
+    return;
+  }
 
-    const index = staffList.value.findIndex(
-      (s) => s.id === selectedStaff.value.id
+  if (!selectedStaff.value) {
+    alert("No staff member selected for update");
+    return;
+  }
+
+  loading.value = true;
+
+  try {
+    // Prepare staff data for the service (use database column names)
+    const staffData = {
+      FirstName: staffForm.value.firstName.trim(),
+      Surname: staffForm.value.surname.trim(),
+      Suffix: staffForm.value.suffix.trim() || "",
+      ContactNumber: staffForm.value.contactNumber.trim(),
+      IsActive: staffForm.value.status === "Active",
+    };
+
+    // Update staff member using the service
+    const response = await staffService.updateStaff(
+      selectedStaff.value.id,
+      staffData,
     );
-    if (index !== -1) {
-      staffList.value[index] = { ...staffForm.value };
+
+    if (response.error) {
+      throw response.error;
     }
 
+    // Refresh the staff list
+    await fetchStaff();
     closeModals();
-    console.log("Staff updated successfully");
   } catch (error) {
     console.error("Error updating staff:", error);
+    errorMessage.value = "Failed to update staff member. Please try again.";
+    alert("Failed to update staff member. Please try again.");
+  } finally {
+    loading.value = false;
   }
 };
 
 const deleteStaff = async () => {
-  try {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 500));
+  if (!selectedStaff.value) {
+    alert("No staff member selected for deletion");
+    return;
+  }
 
-    staffList.value = staffList.value.filter(
-      (s) => s.id !== selectedStaff.value.id
+  // Double-check system admin protection
+  if (selectedStaff.value.isSystemAdmin) {
+    alert(
+      "Cannot delete the system administrator account. This account is protected.",
     );
     closeModals();
-    console.log("Staff deleted successfully");
+    return;
+  }
+
+  loading.value = true;
+
+  try {
+    // Delete staff member using the service
+    const response = await staffService.deleteStaff(selectedStaff.value.id);
+
+    if (response.error) {
+      throw response.error;
+    }
+
+    // Refresh the staff list
+    await fetchStaff();
+    closeModals();
   } catch (error) {
     console.error("Error deleting staff:", error);
+    errorMessage.value = "Failed to delete staff member. Please try again.";
+    alert("Failed to delete staff member. Please try again.");
+  } finally {
+    loading.value = false;
   }
 };
 
@@ -152,15 +463,59 @@ const getStatusBadgeVariant = (status) => {
 const getRoleBadgeVariant = (role) => {
   const variants = {
     Nurse: "info",
-    "Barangay Health Worker": "warning",
+    // "Barangay Health Worker": "warning",
     Admin: "dark",
   };
   return variants[role] || "secondary";
 };
 
-onMounted(() => {
-  fetchStaff();
+const staffChannel = ref(null);
+
+// Initialize staff data on mount
+onMounted(async () => {
+  // Initialize auth if needed
+  if (!authStore.isInitialized) {
+    await authStore.initializeAuth();
+  }
+
+  if (!authStore.isAuthenticated || !authStore.user) {
+    console.error("User not authenticated");
+    return;
+  }
+
+  try {
+    await fetchStaff();
+    staffChannel.value = realtimeService.subscribeToStaff(handleStaffUpdate);
+  } catch (error) {
+    console.error("Error initializing staff management:", error);
+  }
 });
+
+onUnmounted(() => {
+  if (staffChannel.value) {
+    realtimeService.unsubscribe(staffChannel.value);
+  }
+});
+
+const handleStaffUpdate = (payload) => {
+  const { eventType, new: newRecord, old: oldRecord } = payload;
+
+  if (eventType === "INSERT") {
+    // Re-fetch to get properly formatted data with joins
+    fetchStaff();
+  } else if (eventType === "UPDATE") {
+    const index = staffList.value.findIndex((s) => s.id === newRecord.StaffID);
+    if (index !== -1) {
+      // Re-fetch to get properly formatted data with joins
+      fetchStaff();
+    }
+  } else if (eventType === "DELETE") {
+    const index = staffList.value.findIndex((s) => s.id === oldRecord.StaffID);
+    if (index !== -1) {
+      staffList.value.splice(index, 1);
+    }
+  }
+};
 </script>
 
 <template>
@@ -200,9 +555,9 @@ onMounted(() => {
             <select class="form-select" v-model="staffForm.role">
               <option value="">All Roles</option>
               <option value="Nurse">Nurse</option>
-              <option value="Barangay Health Worker">
+              <!-- <option value="Barangay Health Worker">
                 Barangay Health Worker
-              </option>
+              </option> -->
               <option value="Admin">Admin</option>
             </select>
           </div>
@@ -211,11 +566,24 @@ onMounted(() => {
     </div>
 
     <!-- Loading State -->
-    <div v-if="loading" class="text-center py-5">
+    <div v-if="isLoading" class="text-center py-5">
       <div class="spinner-border text-primary animate-pulse" role="status">
         <span class="visually-hidden">Loading...</span>
       </div>
-      <p class="mt-3 text-muted">Loading staff data...</p>
+      <p class="mt-3 text-muted">
+        <span v-if="loading">Loading staff data...</span>
+        <span v-else>Loading...</span>
+      </p>
+    </div>
+
+    <!-- Error State -->
+    <div v-else-if="errorMessage" class="alert alert-danger" role="alert">
+      <i class="bi bi-exclamation-triangle me-2"></i>
+      {{ errorMessage }}
+      <button class="btn btn-sm btn-outline-danger ms-2" @click="fetchStaff">
+        <i class="bi bi-arrow-clockwise me-1"></i>
+        Retry
+      </button>
     </div>
 
     <!-- Staff Table -->
@@ -226,6 +594,11 @@ onMounted(() => {
         <h5 class="mb-0">
           <i class="bi bi-people-fill me-2"></i>
           Staff Members ({{ filteredStaff.length }})
+          <small class="text-muted ms-2">
+            <span v-if="activeStaffCount < totalStaffCount">
+              {{ activeStaffCount }} active
+            </span>
+          </small>
         </h5>
         <button
           class="btn btn-sm btn-outline-primary"
@@ -258,6 +631,10 @@ onMounted(() => {
                 v-for="staff in filteredStaff"
                 :key="staff.id"
                 class="animate-fade-in-up"
+                :class="{
+                  'opacity-75': staff._isOptimistic,
+                  'optimistic-update': staff._isOptimistic,
+                }"
               >
                 <td>
                   <div class="d-flex align-items-center">
@@ -312,7 +689,12 @@ onMounted(() => {
                     <button
                       class="btn btn-sm btn-outline-danger"
                       @click="openDeleteModal(staff)"
-                      title="Delete Staff"
+                      :disabled="staff.isSystemAdmin"
+                      :title="
+                        staff.isSystemAdmin
+                          ? 'System administrator cannot be deleted'
+                          : 'Delete Staff'
+                      "
                     >
                       <i class="bi bi-trash"></i>
                     </button>
@@ -370,8 +752,12 @@ onMounted(() => {
                     v-model="staffForm.firstName"
                     type="text"
                     class="form-control"
+                    :class="{ 'is-invalid': formErrors.firstName }"
                     required
                   />
+                  <div v-if="formErrors.firstName" class="invalid-feedback">
+                    {{ formErrors.firstName }}
+                  </div>
                 </div>
                 <div class="col-md-4">
                   <label class="form-label">Surname *</label>
@@ -379,8 +765,12 @@ onMounted(() => {
                     v-model="staffForm.surname"
                     type="text"
                     class="form-control"
+                    :class="{ 'is-invalid': formErrors.surname }"
                     required
                   />
+                  <div v-if="formErrors.surname" class="invalid-feedback">
+                    {{ formErrors.surname }}
+                  </div>
                 </div>
                 <div class="col-md-4">
                   <label class="form-label">Suffix</label>
@@ -397,8 +787,12 @@ onMounted(() => {
                     v-model="staffForm.contactNumber"
                     type="tel"
                     class="form-control"
+                    :class="{ 'is-invalid': formErrors.contactNumber }"
                     required
                   />
+                  <div v-if="formErrors.contactNumber" class="invalid-feedback">
+                    {{ formErrors.contactNumber }}
+                  </div>
                 </div>
                 <div class="col-md-6">
                   <label class="form-label">Email *</label>
@@ -406,17 +800,40 @@ onMounted(() => {
                     v-model="staffForm.email"
                     type="email"
                     class="form-control"
+                    :class="{ 'is-invalid': formErrors.email }"
+                    placeholder="staff@example.com"
                     required
                   />
+                  <div v-if="formErrors.email" class="invalid-feedback">
+                    {{ formErrors.email }}
+                  </div>
+                  <small class="form-text text-muted">
+                    Email is used for staff login credentials
+                  </small>
                 </div>
                 <div class="col-md-12">
                   <label class="form-label">Role *</label>
-                  <select v-model="staffForm.role" class="form-select" required>
+                  <select
+                    v-model="staffForm.role"
+                    class="form-select"
+                    :class="{ 'is-invalid': formErrors.role }"
+                    required
+                  >
                     <option value="Nurse">Nurse</option>
-                    <option value="Barangay Health Worker">
+                    <!-- <option value="Barangay Health Worker">
                       Barangay Health Worker
-                    </option>
+                    </option> -->
                     <option value="Admin">Admin</option>
+                  </select>
+                  <div v-if="formErrors.role" class="invalid-feedback">
+                    {{ formErrors.role }}
+                  </div>
+                </div>
+                <div class="col-md-12">
+                  <label class="form-label">Status</label>
+                  <select v-model="staffForm.status" class="form-select">
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
                   </select>
                 </div>
               </div>
@@ -426,12 +843,18 @@ onMounted(() => {
                 type="button"
                 class="btn btn-secondary"
                 @click="closeModals"
+                :disabled="loading"
               >
                 Cancel
               </button>
-              <button type="submit" class="btn btn-primary">
-                <i class="bi bi-person-plus me-2"></i>
-                Add Staff
+              <button
+                type="submit"
+                class="btn btn-primary"
+                :disabled="loading || !isFormValid"
+              >
+                <i v-if="loading" class="bi bi-hourglass-split me-2"></i>
+                <i v-else class="bi bi-person-plus me-2"></i>
+                {{ loading ? "Adding..." : "Add Staff" }}
               </button>
             </div>
           </form>
@@ -467,8 +890,12 @@ onMounted(() => {
                     v-model="staffForm.firstName"
                     type="text"
                     class="form-control"
+                    :class="{ 'is-invalid': formErrors.firstName }"
                     required
                   />
+                  <div v-if="formErrors.firstName" class="invalid-feedback">
+                    {{ formErrors.firstName }}
+                  </div>
                 </div>
                 <div class="col-md-4">
                   <label class="form-label">Surname *</label>
@@ -476,8 +903,12 @@ onMounted(() => {
                     v-model="staffForm.surname"
                     type="text"
                     class="form-control"
+                    :class="{ 'is-invalid': formErrors.surname }"
                     required
                   />
+                  <div v-if="formErrors.surname" class="invalid-feedback">
+                    {{ formErrors.surname }}
+                  </div>
                 </div>
                 <div class="col-md-4">
                   <label class="form-label">Suffix</label>
@@ -493,26 +924,52 @@ onMounted(() => {
                     v-model="staffForm.contactNumber"
                     type="tel"
                     class="form-control"
+                    :class="{ 'is-invalid': formErrors.contactNumber }"
                     required
                   />
+                  <div v-if="formErrors.contactNumber" class="invalid-feedback">
+                    {{ formErrors.contactNumber }}
+                  </div>
                 </div>
                 <div class="col-md-6">
-                  <label class="form-label">Email *</label>
+                  <label class="form-label">Email</label>
                   <input
                     v-model="staffForm.email"
                     type="email"
                     class="form-control"
-                    required
+                    :class="{ 'is-invalid': formErrors.email }"
+                    placeholder="staff@example.com (optional)"
                   />
+                  <div v-if="formErrors.email" class="invalid-feedback">
+                    {{ formErrors.email }}
+                  </div>
+                  <small class="form-text text-muted">
+                    Email is optional and for display purposes only
+                  </small>
                 </div>
                 <div class="col-md-12">
                   <label class="form-label">Role *</label>
-                  <select v-model="staffForm.role" class="form-select" required>
+                  <select
+                    v-model="staffForm.role"
+                    class="form-select"
+                    :class="{ 'is-invalid': formErrors.role }"
+                    required
+                  >
                     <option value="Nurse">Nurse</option>
-                    <option value="Barangay Health Worker">
+                    <!-- <option value="Barangay Health Worker">
                       Barangay Health Worker
-                    </option>
+                    </option> -->
                     <option value="Admin">Admin</option>
+                  </select>
+                  <div v-if="formErrors.role" class="invalid-feedback">
+                    {{ formErrors.role }}
+                  </div>
+                </div>
+                <div class="col-md-12">
+                  <label class="form-label">Status</label>
+                  <select v-model="staffForm.status" class="form-select">
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
                   </select>
                 </div>
               </div>
@@ -522,12 +979,18 @@ onMounted(() => {
                 type="button"
                 class="btn btn-secondary"
                 @click="closeModals"
+                :disabled="loading"
               >
                 Cancel
               </button>
-              <button type="submit" class="btn btn-primary">
-                <i class="bi bi-check-lg me-2"></i>
-                Update Staff
+              <button
+                type="submit"
+                class="btn btn-primary"
+                :disabled="loading || !isFormValid"
+              >
+                <i v-if="loading" class="bi bi-hourglass-split me-2"></i>
+                <i v-else class="bi bi-check-lg me-2"></i>
+                {{ loading ? "Updating..." : "Update Staff" }}
               </button>
             </div>
           </form>
@@ -555,27 +1018,62 @@ onMounted(() => {
             ></button>
           </div>
           <div class="modal-body">
-            <p>Are you sure you want to delete this staff member?</p>
-            <div v-if="selectedStaff" class="alert alert-warning">
-              <strong
-                >{{ selectedStaff.firstName }}
-                {{ selectedStaff.surname }}</strong
-              ><br />
-              <small>{{ selectedStaff.email }}</small>
+            <div class="text-center mb-4">
+              <i class="bi bi-exclamation-triangle text-danger fs-1"></i>
             </div>
-            <p class="text-muted mb-0">This action cannot be undone.</p>
+            <h5 class="text-center mb-3">Confirm Staff Deletion</h5>
+            <p class="text-center mb-4">
+              Are you sure you want to delete this staff member? This action
+              cannot be undone.
+            </p>
+
+            <div v-if="selectedStaff" class="alert alert-warning">
+              <div class="d-flex align-items-center">
+                <div class="staff-avatar-small me-3">
+                  <i class="bi bi-person-circle"></i>
+                </div>
+                <div>
+                  <strong class="d-block"
+                    >{{ selectedStaff.firstName }}
+                    {{ selectedStaff.surname }}
+                    <span v-if="selectedStaff.suffix">{{
+                      selectedStaff.suffix
+                    }}</span></strong
+                  >
+                  <small class="text-muted">{{ selectedStaff.email }}</small
+                  ><br />
+                  <small class="badge bg-info">{{ selectedStaff.role }}</small>
+                  <small class="badge bg-success ms-1">{{
+                    selectedStaff.status
+                  }}</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="alert alert-danger">
+              <strong>Warning:</strong> Deleting this staff member will
+              permanently remove them from the system. Make sure this is the
+              correct action before proceeding.
+            </div>
           </div>
           <div class="modal-footer">
             <button
               type="button"
               class="btn btn-secondary"
               @click="closeModals"
+              :disabled="loading"
             >
               Cancel
             </button>
-            <button type="submit" class="btn btn-danger" @click="deleteStaff">
-              <i class="bi bi-trash me-2"></i>
-              Delete Staff
+            <button
+              type="button"
+              class="btn btn-danger"
+              @click="deleteStaff"
+              :disabled="loading"
+            >
+              <i v-if="loading" class="bi bi-hourglass-split me-2"></i>
+              <i v-else class="bi bi-trash me-2"></i>
+              {{ loading ? "Deleting..." : "Delete Staff" }}
             </button>
           </div>
         </div>
@@ -647,6 +1145,89 @@ onMounted(() => {
   animation: spin 1s linear infinite;
 }
 
+/* Optimistic updates styling */
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.02);
+  }
+}
+
+/* Enhanced optimistic update indicators */
+.optimistic-update {
+  position: relative;
+}
+
+.optimistic-update::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(59, 130, 246, 0.1),
+    transparent
+  );
+  animation: shimmer 1.5s infinite;
+  pointer-events: none;
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Enhanced delete confirmation styling */
+.staff-avatar-small {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: var(--primary-gradient-start, #007bff);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+}
+
+/* Loading state for form submissions */
+.form-loading {
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+/* Enhanced modal styling */
+.modal-content {
+  border: none;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.modal-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+}
+
+.modal-header .btn-close {
+  filter: invert(1);
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .card-header {
@@ -661,6 +1242,77 @@ onMounted(() => {
 
   .btn-group .btn {
     flex: 1;
+  }
+
+  .modal-dialog {
+    margin: 0.5rem;
+  }
+
+  /* Table responsive improvements */
+  .table-responsive {
+    font-size: 0.875rem;
+  }
+
+  .staff-avatar {
+    width: 32px;
+    height: 32px;
+    font-size: 1rem;
+  }
+
+  /* Modal responsive improvements */
+  .modal-body .row {
+    margin: 0 -0.5rem;
+  }
+
+  .modal-body .row > * {
+    padding: 0 0.5rem;
+  }
+
+  /* Form improvements on mobile */
+  .form-label {
+    font-size: 0.875rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .form-control,
+  .form-select {
+    font-size: 0.875rem;
+    padding: 0.5rem 0.75rem;
+  }
+}
+
+@media (max-width: 576px) {
+  /* Extra small screens */
+  .manage-staff .card {
+    margin: 0 -0.75rem;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+
+  .manage-staff .card-header {
+    padding: 1rem 0.75rem;
+  }
+
+  .manage-staff .card-body {
+    padding: 1rem 0.75rem;
+  }
+
+  /* Stack form fields vertically on very small screens */
+  .modal-body .col-md-4,
+  .modal-body .col-md-6 {
+    flex: 0 0 100%;
+    max-width: 100%;
+    margin-bottom: 1rem;
+  }
+
+  /* Adjust search and filter layout */
+  .search-box {
+    margin-bottom: 1rem;
+  }
+
+  .search-box input {
+    font-size: 1rem; /* Prevents zoom on iOS */
   }
 }
 </style>

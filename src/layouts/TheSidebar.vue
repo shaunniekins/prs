@@ -2,6 +2,7 @@
 import { computed, ref, onMounted } from "vue";
 import { useAuthStore } from "../stores/auth";
 import { useRouter } from "vue-router";
+import LogoutConfirmDialog from "../components/LogoutConfirmDialog.vue";
 
 const props = defineProps({
   isSidebarCollapsed: {
@@ -29,28 +30,36 @@ const unreadNotificationCount = computed(() => {
 
 const userRole = computed(() => user.value?.role || null);
 
-// Enhanced logout with loading state
+// Enhanced logout with confirmation dialog and loading state
 const isLoggingOut = ref(false);
+const showLogoutDialog = ref(false);
 
-const logout = async () => {
+const logout = () => {
   if (isLoggingOut.value) return; // Prevent multiple clicks
+  showLogoutDialog.value = true;
+};
+
+const handleLogoutConfirm = async () => {
+  if (isLoggingOut.value) return;
 
   isLoggingOut.value = true;
+  showLogoutDialog.value = false;
 
   try {
-    // Show logging out message briefly
-    await new Promise((resolve) => setTimeout(resolve, 800));
-
-    // Clear authentication session
-    authStore.logout();
-
-    // Redirect to login page
-    router.push("/login");
+    // Use the auth store logout which now uses the secure logout service
+    await authStore.logout();
+    // The logout service will handle the redirect automatically
   } catch (error) {
     console.error("Logout error:", error);
+    // Fallback redirect in case logout service fails
+    router.push("/login");
   } finally {
     isLoggingOut.value = false;
   }
+};
+
+const handleLogoutCancel = () => {
+  showLogoutDialog.value = false;
 };
 
 const toggleSidebar = () => {
@@ -286,7 +295,7 @@ const closeSidebar = () => {
         </template>
 
         <!-- Spacer to push profile to bottom (if needed) -->
-        <li class="flex-grow-1"></li>
+        <li class="grow"></li>
       </ul>
 
       <!-- Bottom user profile and logout section -->
@@ -342,6 +351,13 @@ const closeSidebar = () => {
         </ul>
       </div>
     </div>
+
+    <!-- Logout Confirmation Dialog -->
+    <LogoutConfirmDialog
+      v-model:show="showLogoutDialog"
+      @confirm="handleLogoutConfirm"
+      @cancel="handleLogoutCancel"
+    />
   </div>
 </template>
 
@@ -540,7 +556,8 @@ const closeSidebar = () => {
 
 .logout-btn:focus {
   outline: none !important;
-  box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.25),
+  box-shadow:
+    0 0 0 3px rgba(220, 53, 69, 0.25),
     0 4px 8px rgba(220, 53, 69, 0.3) !important;
   color: #ffffff !important;
 }

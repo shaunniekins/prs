@@ -3,6 +3,8 @@ import { adminRoutes } from "./admin";
 import { nurseRoutes } from "./nurse";
 import { patientRoutes } from "./patient";
 import Login from "../views/Login.vue";
+import { useAuthStore } from "../stores/auth.js";
+import { useAuth } from "../composables/useAuth.js";
 
 // Combine all routes
 const routes = [
@@ -55,32 +57,127 @@ const router = createRouter({
   },
 });
 
-// Navigation guards
-router.beforeEach((to, from, next) => {
-  // Simulate authentication check (replace with actual auth logic)
-  const isAuthenticated = localStorage.getItem("isAuthenticated") === "true";
-  const userRole = localStorage.getItem("userRole") || "guest";
+// Navigation guards - Simplified and fixed
+router.beforeEach(async (to, from, next) => {
+  const authStore = useAuthStore();
 
-  // Check if route requires authentication
-  if (to.meta.requiresAuth && !isAuthenticated) {
+  try {
+    // Initialize auth if not already done
+    if (!authStore.isInitialized) {
+      await authStore.initializeAuth();
+    }
+
+    const isAuthenticated = authStore.isAuthenticated;
+    const userRole = authStore.userRole;
+
+    // Handle admin routes with specific guard
+    if (to.path.startsWith("/admin")) {
+      const { adminRouteGuard } = useAuth();
+      return adminRouteGuard(to, from, next);
+    }
+
+    // Redirect unauthenticated users to login (except for public routes)
+    if (to.meta.requiresAuth && !isAuthenticated) {
+      next("/login");
+      return;
+    }
+
+    // Redirect authenticated users away from login page, but allow during logout
+    if (to.path === "/login" && isAuthenticated) {
+      // Check if this is a logout navigation by checking if we're being forced to login
+      const isLogoutNavigation =
+        !authStore.user || !userRole || userRole === "guest";
+      if (!isLogoutNavigation) {
+        // Redirect to default route for role
+        const defaultRoute = getDefaultRouteForRole(userRole);
+        next(defaultRoute);
+        return;
+      }
+      // Allow navigation to login if user is logging out
+    }
+
+    // Check role-based access for protected routes
+    if (to.meta.requiresAuth && to.meta.role && to.meta.role !== userRole) {
+      if (userRole && ["admin", "nurse", "patient"].includes(userRole)) {
+        next(getDefaultRouteForRole(userRole));
+        return;
+      } else {
+        next("/login");
+        return;
+      }
+    }
+
+    // No need to store last visited path
+
+    next();
+  } catch (error) {
+    console.error("Router guard error:", error);
     next("/login");
-    return;
   }
-
-  // Check role-based access
-  if (to.meta.requiresAuth && to.meta.role && to.meta.role !== userRole) {
-    // Redirect to appropriate dashboard based on user role
-    next(getDefaultRouteForRole(userRole));
-    return;
-  }
-
-  // Redirect authenticated users away from login page
-  if (to.path === "/login" && isAuthenticated) {
-    next(getDefaultRouteForRole(userRole));
-    return;
-  }
-
-  next();
 });
+
+// Helper function to validate if a path is accessible for a role
+const isValidRolePath = (path, role) => {
+  const validPaths = {
+    admin: ["/admin"],
+    nurse: ["/nurse"],
+    patient: ["/patient"],
+  };
+
+  const rolePaths = validPaths[role] || [];
+  return rolePaths.some((validPath) => path.startsWith(validPath));
+};
+
+// Simplified role-based route validation
+const validateRoleAccess = (userRole, requiredRole) => {
+  if (!requiredRole) return true;
+  return userRole === requiredRole;
+};
+
+// After navigation guard - no additional context management needed
+
+// Simplified page refresh handling
+const handlePageRefresh = () => {
+  try {
+    const authStore = useAuthStore();
+
+    // Only handle refresh if we're on a protected route and auth is not initialized
+    if (window.location.pathname !== "/login" && !authStore.isInitialized) {
+      authStore
+        .initializeAuth()
+        .then(() => {
+          if (authStore.isAuthenticated) {
+            const userRole = authStore.userRole;
+            const currentPath = window.location.pathname;
+
+            // No intended destination handling needed
+
+            // If current path is valid for user role, stay there
+            if (currentPath.startsWith(`/${userRole}`)) {
+              return;
+            }
+
+            // Otherwise redirect to appropriate role path
+            const defaultPath = getDefaultRouteForRole(userRole);
+            router.push(defaultPath);
+          }
+        })
+        .catch((error) => {
+          console.error("❌ Auth initialization failed on refresh:", error);
+          router.push("/login");
+        });
+    }
+  } catch (error) {
+    // Simple deferral - just wait for next tick
+    setTimeout(handlePageRefresh, 100);
+  }
+};
+
+// Initialize page refresh handling
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", handlePageRefresh);
+} else {
+  handlePageRefresh();
+}
 
 export default router;

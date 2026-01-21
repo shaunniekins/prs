@@ -1,12 +1,18 @@
 <script setup>
-import { ref, computed, onMounted } from "vue";
-import { useAuthStore } from "../../stores/auth";
+import { ref, computed, onMounted, onUnmounted } from "vue";
+import { useSupabase } from "../../composables/useSupabase.js";
+import { useAuthStore } from "../../stores/auth.js";
 
-// Store
+// Initialize composables
+const { appointments, medicalRecords, patients, loading, error } =
+  useSupabase();
 const authStore = useAuthStore();
+const { user } = authStore;
 
 // Reactive data
-const loading = ref(false);
+const appointmentsData = ref([]);
+const medicalRecordsData = ref([]);
+const patientData = ref(null);
 const stats = ref({
   totalAppointments: 0,
   upcomingAppointments: 0,
@@ -15,61 +21,32 @@ const stats = ref({
   recentActivities: [],
 });
 
-// Computed properties
-const user = computed(() => authStore.user);
-const isAuthenticated = computed(() => authStore.isAuthenticated);
+// Helper functions
+const formatDate = (dateString) => {
+  if (!dateString) return "N/A";
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffTime = Math.abs(now - date);
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-// Methods
-const fetchDashboardData = async () => {
-  loading.value = true;
-  try {
-    // Simulate API calls - replace with actual API calls
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+  if (diffDays === 1) return "1 day ago";
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 14) return "1 week ago";
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
+  return date.toLocaleDateString();
+};
 
-    // Mock data - replace with actual data fetching
-    stats.value = {
-      totalAppointments: 12,
-      upcomingAppointments: 2,
-      completedAppointments: 10,
-      totalRecords: 8,
-      recentActivities: [
-        {
-          id: 1,
-          type: "appointment",
-          message: "Appointment completed: Regular check-up",
-          time: "2 days ago",
-        },
-        {
-          id: 2,
-          type: "record",
-          message: "Medical record updated by Dr. Sarah Johnson",
-          time: "1 week ago",
-        },
-        {
-          id: 3,
-          type: "appointment",
-          message: "Upcoming appointment: Follow-up consultation",
-          time: "Scheduled for tomorrow",
-        },
-        {
-          id: 4,
-          type: "vaccination",
-          message: "Vaccination record added: COVID-19 booster",
-          time: "2 weeks ago",
-        },
-        {
-          id: 5,
-          type: "appointment",
-          message: "Appointment scheduled: General consultation",
-          time: "3 weeks ago",
-        },
-      ],
-    };
-  } catch (error) {
-    console.error("Error fetching dashboard data:", error);
-  } finally {
-    loading.value = false;
-  }
+const formatAppointmentDate = (dateString) => {
+  if (!dateString) return "N/A";
+  const date = new Date(dateString);
+  return date.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 };
 
 const getActivityIcon = (type) => {
@@ -92,115 +69,124 @@ const getActivityColor = (type) => {
   return colors[type] || "secondary";
 };
 
+const getStatusBadgeVariant = (status) => {
+  const variants = {
+    Pending: "warning",
+    Confirmed: "info",
+    Completed: "success",
+    Cancelled: "danger",
+  };
+  return variants[status] || "secondary";
+};
+
 const bookAppointment = () => {
-  console.log("Booking new appointment");
-  // In a real application, this would open the appointment booking modal
-  alert("Appointment booking would be implemented here");
+  window.location.href = "/patient/appointments";
 };
 
 const viewMedicalRecord = () => {
-  console.log("Viewing medical records");
-  // In a real application, this would navigate to medical records
-  alert("Medical records view would be implemented here");
+  window.location.href = "/patient/medical-records";
 };
 
 const updateProfile = () => {
-  console.log("Updating profile");
-  // In a real application, this would navigate to profile update
   alert("Profile update would be implemented here");
 };
 
+// Fetch data method
+const fetchData = async () => {
+  loading.value = true;
+  error.value = null;
+
+  try {
+    if (!authStore.isInitialized) {
+      await authStore.initializeAuth();
+    }
+
+    if (!authStore.isAuthenticated || !authStore.user) {
+      throw new Error("Please log in to view the dashboard");
+    }
+
+    const appointmentsResult = await appointments.getMyAppointments();
+
+    appointmentsData.value = appointmentsResult || [];
+
+    const patientResult = await patients.getMyPatients();
+
+    patientData.value =
+      patientResult && patientResult.length > 0 ? patientResult[0] : null;
+
+    if (patientData.value?.PatientID) {
+      const recordsResult = await medicalRecords.getMedicalRecordsByPatient(
+        patientData.value.PatientID,
+      );
+
+      medicalRecordsData.value = recordsResult || [];
+    } else {
+      medicalRecordsData.value = [];
+    }
+
+    computeStats();
+  } catch (err) {
+    console.error("❌ [Dashboard] Error fetching dashboard data:", err);
+    error.value =
+      err.message || "Failed to load dashboard data. Please try again.";
+  } finally {
+    loading.value = false;
+  }
+};
+
+// Compute stats from fetched data
+const computeStats = () => {
+  const now = new Date();
+
+  // Total appointments
+  stats.value.totalAppointments = appointmentsData.value.length;
+
+  // Upcoming appointments (future dates)
+  stats.value.upcomingAppointments = appointmentsData.value.filter((apt) => {
+    const aptDate = new Date(apt.DateTime);
+    return aptDate > now;
+  }).length;
+
+  // Completed appointments (past dates with completed status)
+  stats.value.completedAppointments = appointmentsData.value.filter((apt) => {
+    const aptDate = new Date(apt.DateTime);
+    return aptDate < now && apt.Status === "Completed";
+  }).length;
+
+  // Total medical records
+  stats.value.totalRecords = medicalRecordsData.value.length;
+};
+
+// Lifecycle hooks
 onMounted(() => {
-  fetchDashboardData();
+  fetchData();
+});
+
+onUnmounted(() => {
+  // No cleanup needed
 });
 </script>
 
 <template>
   <div class="patient-dashboard">
+    <!-- Main Dashboard Content -->
     <!-- Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
       <div>
         <h1 class="mb-2 animate-fade-in-left">My Dashboard</h1>
         <p class="text-muted mb-0 animate-fade-in-left animation-delay-100">
-          Welcome back, {{ user?.fullName || user?.username }}! Here's your
-          health overview.
+          Welcome to your health overview.
         </p>
-      </div>
-      <div class="animate-fade-in-right">
-        <button
-          class="btn btn-primary"
-          @click="fetchDashboardData"
-          :disabled="loading"
-        >
-          <i
-            class="bi bi-arrow-clockwise me-2"
-            :class="{ 'animate-spin': loading }"
-          ></i>
-          Refresh
-        </button>
-      </div>
-    </div>
-
-    <!-- Loading State -->
-    <div v-if="loading" class="text-center py-5">
-      <div
-        class="spinner-border text-primary animate-pulse"
-        role="status"
-        aria-live="polite"
-      >
-        <span class="visually-hidden">Loading dashboard data...</span>
-      </div>
-      <p class="mt-3 text-muted" role="status" aria-live="polite">
-        Loading dashboard data...
-      </p>
-
-      <!-- Welcome Message Skeleton -->
-      <div class="mt-4">
-        <div
-          class="loading-skeleton mb-2"
-          style="width: 300px; height: 24px; margin: 0 auto"
-        ></div>
-        <div
-          class="loading-skeleton"
-          style="width: 400px; height: 20px; margin: 0 auto"
-        ></div>
-      </div>
-
-      <!-- Stats Cards Skeleton -->
-      <div class="row g-4 mt-4">
-        <div v-for="n in 4" :key="n" class="col-xl-3 col-lg-6 col-md-6">
-          <div class="card">
-            <div class="card-body text-center">
-              <div
-                class="loading-skeleton mb-3"
-                style="
-                  width: 50px;
-                  height: 50px;
-                  border-radius: 50%;
-                  margin: 0 auto;
-                "
-              ></div>
-              <div
-                class="loading-skeleton mb-2"
-                style="width: 30px; height: 28px; margin: 0 auto"
-              ></div>
-              <div
-                class="loading-skeleton"
-                style="width: 100px; height: 18px; margin: 0 auto"
-              ></div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
 
     <!-- Welcome Message -->
-    <div v-else class="alert alert-primary animate-fade-in-up">
+    <div class="alert alert-primary animate-fade-in-up">
       <div class="d-flex align-items-center">
         <div class="alert-icon me-3">
           <i class="bi bi-info-circle text-primary fs-4"></i>
         </div>
-        <div class="flex-grow-1">
+        <div class="grow">
           <h6 class="alert-heading mb-1">
             Welcome to Baan KM-3 Health Center Information System
           </h6>
@@ -229,7 +215,7 @@ onMounted(() => {
             <p class="card-text text-muted mb-0">Total Appointments</p>
             <small class="text-success">
               <i class="bi bi-graph-up"></i>
-              +2 this month
+              {{ stats.completedAppointments }} completed
             </small>
           </div>
         </div>
@@ -250,7 +236,11 @@ onMounted(() => {
             <p class="card-text text-muted mb-0">Upcoming Appointments</p>
             <small class="text-info">
               <i class="bi bi-clock"></i>
-              Next: Tomorrow 10:30 AM
+              {{
+                stats.upcomingAppointments > 0
+                  ? `${stats.upcomingAppointments} scheduled`
+                  : "No upcoming appointments"
+              }}
             </small>
           </div>
         </div>
@@ -269,7 +259,11 @@ onMounted(() => {
               {{ stats.completedAppointments }}
             </h3>
             <p class="card-text text-muted mb-0">Completed Visits</p>
-            <small class="text-muted"> Last: 2 days ago </small>
+            <small class="text-muted">{{
+              stats.completedAppointments > 0
+                ? `${stats.completedAppointments} visits completed`
+                : "No completed visits"
+            }}</small>
           </div>
         </div>
       </div>
@@ -283,7 +277,11 @@ onMounted(() => {
             </div>
             <h3 class="card-title text-info mb-2">{{ stats.totalRecords }}</h3>
             <p class="card-text text-muted mb-0">Medical Records</p>
-            <small class="text-muted"> Updated 1 week ago </small>
+            <small class="text-muted">{{
+              stats.totalRecords > 0
+                ? `${stats.totalRecords} records available`
+                : "No records available"
+            }}</small>
           </div>
         </div>
       </div>
@@ -310,100 +308,63 @@ onMounted(() => {
           </div>
           <div class="card-body p-0">
             <div class="appointments-list">
-              <!-- Next Appointment -->
-              <div
-                class="appointment-item p-4 border-bottom animate-fade-in-up"
-              >
-                <div class="d-flex justify-content-between align-items-start">
-                  <div class="appointment-info">
-                    <div class="d-flex align-items-center mb-2">
-                      <div class="appointment-icon me-3">
-                        <i class="bi bi-calendar-check text-primary fs-4"></i>
-                      </div>
-                      <div>
-                        <h6 class="mb-1">Regular Check-up</h6>
-                        <p class="text-muted mb-1">
-                          Tomorrow, October 16, 2024 at 10:30 AM
-                        </p>
-                        <p class="mb-0">
-                          Dr. Sarah Johnson - Consultation Room 1
-                        </p>
+              <!-- Loading State -->
+              <div v-if="loading" class="text-center py-5">
+                <div
+                  class="spinner-border text-primary animate-pulse"
+                  role="status"
+                >
+                  <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-3 text-muted">Loading appointments...</p>
+              </div>
+
+              <!-- Appointments List -->
+              <div v-else-if="appointmentsData.length > 0">
+                <div
+                  v-for="appointment in appointmentsData.slice(0, 3)"
+                  :key="appointment.AppointmentID"
+                  class="appointment-item p-3 border-bottom animate-fade-in-up"
+                >
+                  <div class="d-flex align-items-start">
+                    <div class="appointment-icon me-3">
+                      <i class="bi bi-calendar-check text-primary"></i>
+                    </div>
+                    <div class="grow">
+                      <div
+                        class="d-flex justify-content-between align-items-start"
+                      >
+                        <div>
+                          <h6 class="mb-1">
+                            {{ appointment.Type || "Appointment" }}
+                          </h6>
+                          <p class="mb-1 text-muted small">
+                            {{ appointment.Reason || "No reason specified" }}
+                          </p>
+                          <p class="mb-0 text-primary fw-bold">
+                            {{ formatAppointmentDate(appointment.DateTime) }}
+                          </p>
+                        </div>
+                        <div class="text-end">
+                          <span
+                            class="badge"
+                            :class="`bg-${getStatusBadgeVariant(
+                              appointment.Status,
+                            )}`"
+                          >
+                            {{ appointment.Status || "Pending" }}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                    <div class="appointment-details">
-                      <small class="text-muted">
-                        <i class="bi bi-clock me-1"></i>
-                        Duration: 30 minutes
-                      </small>
-                      <small class="text-muted ms-3">
-                        <i class="bi bi-geo-alt me-1"></i>
-                        Baan KM-3 Health Center
-                      </small>
-                    </div>
-                  </div>
-                  <div class="appointment-actions text-end">
-                    <button class="btn btn-sm btn-outline-primary me-2">
-                      <i class="bi bi-pencil me-1"></i>
-                      Reschedule
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger">
-                      <i class="bi bi-x-circle me-1"></i>
-                      Cancel
-                    </button>
                   </div>
                 </div>
               </div>
 
-              <!-- Second Appointment -->
-              <div
-                class="appointment-item p-4 border-bottom animate-fade-in-up animation-delay-100"
-              >
-                <div class="d-flex justify-content-between align-items-start">
-                  <div class="appointment-info">
-                    <div class="d-flex align-items-center mb-2">
-                      <div class="appointment-icon me-3">
-                        <i class="bi bi-stethoscope text-success fs-4"></i>
-                      </div>
-                      <div>
-                        <h6 class="mb-1">Follow-up Consultation</h6>
-                        <p class="text-muted mb-1">
-                          October 18, 2024 at 2:00 PM
-                        </p>
-                        <p class="mb-0">
-                          Dr. Sarah Johnson - Consultation Room 1
-                        </p>
-                      </div>
-                    </div>
-                    <div class="appointment-details">
-                      <small class="text-muted">
-                        <i class="bi bi-clock me-1"></i>
-                        Duration: 20 minutes
-                      </small>
-                      <small class="text-muted ms-3">
-                        <i class="bi bi-clipboard-pulse me-1"></i>
-                        Diabetes management review
-                      </small>
-                    </div>
-                  </div>
-                  <div class="appointment-actions text-end">
-                    <button class="btn btn-sm btn-outline-primary me-2">
-                      <i class="bi bi-pencil me-1"></i>
-                      Reschedule
-                    </button>
-                    <button class="btn btn-sm btn-outline-secondary">
-                      <i class="bi bi-info-circle me-1"></i>
-                      Details
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- No more appointments message -->
-              <div
-                class="text-center py-4 animate-fade-in-up animation-delay-200"
-              >
+              <!-- No appointments message -->
+              <div v-else class="text-center py-4 animate-fade-in-up">
                 <i class="bi bi-calendar-plus text-muted fs-4 mb-2"></i>
-                <p class="text-muted mb-3">No more upcoming appointments</p>
+                <p class="text-muted mb-3">No upcoming appointments</p>
                 <button class="btn btn-primary" @click="bookAppointment">
                   <i class="bi bi-calendar-plus me-2"></i>
                   Book New Appointment
@@ -465,25 +426,35 @@ onMounted(() => {
               class="health-item d-flex justify-content-between align-items-center py-2"
             >
               <span>Blood Type</span>
-              <span class="badge bg-primary">O+</span>
+              <span class="badge bg-primary">{{
+                patientData?.BloodType || "Not specified"
+              }}</span>
             </div>
             <div
               class="health-item d-flex justify-content-between align-items-center py-2 border-top"
             >
               <span>Allergies</span>
-              <span class="badge bg-success">None</span>
+              <span class="badge bg-success">{{
+                patientData?.Allergies || "None"
+              }}</span>
             </div>
             <div
               class="health-item d-flex justify-content-between align-items-center py-2 border-top"
             >
               <span>Current Medications</span>
-              <span class="badge bg-info">2 Active</span>
+              <span class="badge bg-info">{{
+                patientData?.CurrentMedications || "0 Active"
+              }}</span>
             </div>
             <div
               class="health-item d-flex justify-content-between align-items-center py-2 border-top"
             >
               <span>Last Check-up</span>
-              <span class="text-muted">2 days ago</span>
+              <span class="text-muted">{{
+                patientData?.LastCheckup
+                  ? formatDate(patientData.LastCheckup)
+                  : "N/A"
+              }}</span>
             </div>
             <div class="text-center mt-3">
               <button
@@ -506,40 +477,10 @@ onMounted(() => {
             </h5>
           </div>
           <div class="card-body">
-            <div class="reminder-item d-flex align-items-start p-2 mb-2">
-              <div class="reminder-icon me-3">
-                <i class="bi bi-capsule text-primary"></i>
-              </div>
-              <div class="flex-grow-1">
-                <div class="fw-medium">Medication Reminder</div>
-                <small class="text-muted"
-                  >Take Lisinopril at 8:00 AM daily</small
-                >
-              </div>
-            </div>
-
-            <div class="reminder-item d-flex align-items-start p-2 mb-2">
-              <div class="reminder-icon me-3">
-                <i class="bi bi-thermometer text-warning"></i>
-              </div>
-              <div class="flex-grow-1">
-                <div class="fw-medium">Blood Pressure Monitoring</div>
-                <small class="text-muted"
-                  >Check BP twice daily and record readings</small
-                >
-              </div>
-            </div>
-
-            <div class="reminder-item d-flex align-items-start p-2">
-              <div class="reminder-icon me-3">
-                <i class="bi bi-calendar-event text-info"></i>
-              </div>
-              <div class="flex-grow-1">
-                <div class="fw-medium">Follow-up Appointment</div>
-                <small class="text-muted"
-                  >Tomorrow at 10:30 AM - Don't forget!</small
-                >
-              </div>
+            <div class="text-center py-3">
+              <i class="bi bi-check-circle text-success fs-4 mb-2"></i>
+              <p class="text-muted mb-0">No pending reminders</p>
+              <small class="text-muted">You're all caught up!</small>
             </div>
           </div>
         </div>
@@ -556,26 +497,13 @@ onMounted(() => {
       </div>
       <div class="card-body p-0">
         <div class="activity-list">
-          <div
-            v-for="activity in stats.recentActivities"
-            :key="activity.id"
-            class="activity-item d-flex align-items-start p-3 border-bottom animate-fade-in-up"
-            :class="`animation-delay-${activity.id * 100}`"
-          >
-            <div class="activity-icon me-3">
-              <i
-                :class="`${getActivityIcon(
-                  activity.type
-                )} text-${getActivityColor(activity.type)}`"
-              ></i>
-            </div>
-            <div class="activity-content flex-grow-1">
-              <p class="mb-1">{{ activity.message }}</p>
-              <small class="text-muted">
-                <i class="bi bi-clock me-1"></i>
-                {{ activity.time }}
-              </small>
-            </div>
+          <!-- No activities message -->
+          <div class="text-center py-4">
+            <i class="bi bi-activity text-muted fs-4 mb-2"></i>
+            <p class="text-muted mb-0">No recent activities</p>
+            <small class="text-muted"
+              >Activities will appear here as they occur</small
+            >
           </div>
         </div>
       </div>
@@ -585,7 +513,9 @@ onMounted(() => {
 
 <style scoped>
 .stats-card {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    transform 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .stats-card:hover {
@@ -688,18 +618,215 @@ onMounted(() => {
   animation: spin 1s linear infinite;
 }
 
-/* Responsive adjustments */
-@media (max-width: 768px) {
+/* Mobile-first responsive design */
+@media (max-width: 767px) {
+  .patient-dashboard {
+    padding: 0;
+  }
+
+  /* Header adjustments */
+  .d-flex.justify-content-between.align-items-center.mb-4 {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-md);
+  }
+
+  h1 {
+    font-size: 1.75rem;
+    margin-bottom: var(--space-xs);
+  }
+
+  .text-muted {
+    font-size: 0.875rem;
+  }
+
+  /* Welcome message */
+  .alert.alert-primary {
+    border-radius: 12px;
+    margin-bottom: var(--space-lg);
+  }
+
+  .alert-icon {
+    margin-right: var(--space-md);
+  }
+
+  .alert-heading {
+    font-size: 1.1rem;
+  }
+
+  /* Stats cards - stack vertically on mobile */
+  .row.g-4.mb-5 {
+    --bs-gutter-x: 0;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .col-xl-3 {
+    padding: 0 var(--space-xs) var(--space-md);
+  }
+
+  .stats-card {
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    margin-bottom: var(--space-md);
+  }
+
   .stats-card .card-body {
-    padding: 1.5rem 1rem;
+    padding: var(--space-lg) var(--space-md);
+    text-align: center;
+  }
+
+  .card-title {
+    font-size: 2rem;
+    margin-bottom: var(--space-xs);
+  }
+
+  .card-text {
+    font-size: 0.875rem;
+  }
+
+  .stats-icon {
+    margin-bottom: var(--space-md);
+  }
+
+  .animate-float {
+    animation-duration: 3s; /* Reduce animation on mobile for performance */
+  }
+
+  /* Main content adjustments */
+  .row .col-lg-8 {
+    padding: 0;
+    margin-bottom: var(--space-lg);
+  }
+
+  .row .col-lg-4 {
+    padding: 0;
+  }
+
+  .card {
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .card-header {
+    padding: var(--space-md);
+    border-radius: 12px 12px 0 0;
+  }
+
+  .card-body {
+    padding: var(--space-md);
+  }
+
+  /* Appointments list */
+  .appointments-list {
+    padding: 0;
   }
 
   .appointment-item {
-    padding: 1rem;
+    padding: var(--space-md);
+    border-radius: 8px;
+    margin-bottom: var(--space-sm);
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    transition: all 0.2s ease;
   }
 
-  .activity-item {
-    padding: 1rem;
+  .appointment-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .appointment-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+  }
+
+  .appointment-details h6 {
+    font-size: 1rem;
+    margin-bottom: var(--space-xs);
+  }
+
+  .badge {
+    font-size: 0.75rem;
+  }
+
+  /* Quick actions */
+  .d-grid.gap-2 {
+    gap: var(--space-sm) !important;
+  }
+
+  .btn {
+    font-size: 0.9rem;
+    padding: var(--space-md);
+    border-radius: 8px;
+    width: 100%;
+    margin-bottom: var(--space-sm);
+  }
+
+  /* Health summary */
+  .health-item {
+    padding: var(--space-sm) 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  }
+
+  .health-item:last-child {
+    border-bottom: none;
+  }
+
+  /* Reminders */
+  .text-center.py-3 {
+    padding: var(--space-lg) 0;
+  }
+
+  /* Recent activities */
+  .activity-list {
+    padding: 0;
+  }
+
+  .text-center.py-4 {
+    padding: var(--space-xl) 0;
+  }
+
+  /* Loading states */
+  .text-center.py-5 {
+    padding: var(--space-xl) 0;
+  }
+
+  .spinner-border {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  /* Touch-friendly interactions */
+  .card:hover,
+  .appointment-item:hover,
+  .reminder-item:hover,
+  .activity-item:hover {
+    transform: none; /* Disable hover effects on mobile */
+  }
+}
+
+/* Small tablets (768px to 1023px) */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .col-xl-3 {
+    margin-bottom: var(--space-md);
+  }
+
+  .stats-card .card-body {
+    padding: var(--space-xl);
+  }
+
+  .card-title {
+    font-size: 2.5rem;
+  }
+
+  .appointment-item {
+    padding: var(--space-lg);
+  }
+
+  .btn {
+    font-size: 1rem;
+    padding: var(--space-lg);
   }
 }
 </style>

@@ -1,11 +1,23 @@
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
+import useSupabase from "@/composables/useSupabase";
 import { useAuthStore } from "../../stores/auth";
 
-// Store
-const authStore = useAuthStore();
+// Initialize Supabase composable
+const {
+  patients: patientOps,
+  appointments: appointmentOps,
+  staff: staffOps,
+  medicalRecords: medicalRecordOps,
+  reports: reportOps,
+  supabase,
+  loading: supabaseLoading,
+  error: supabaseError,
+  requireRole,
+} = useSupabase();
 
 // Reactive data
+const errorMessage = ref("");
 const loading = ref(false);
 const stats = ref({
   totalPatients: 0,
@@ -16,31 +28,131 @@ const stats = ref({
   recentActivities: [],
 });
 
-// Computed properties
-const user = computed(() => authStore.user);
-const isAuthenticated = computed(() => authStore.isAuthenticated);
+// Authentication state
+const user = ref(null);
+const isAuthenticated = ref(false);
+const userRole = ref("");
+const authLoading = ref(true);
+
+// Initialize auth state
+const initializeAuth = async () => {
+  try {
+    // Initialize authentication first
+    const authStore = useAuthStore();
+    await authStore.initializeAuth();
+
+    // Check if user is authenticated and has admin role
+    if (!authStore.isAuthenticated || authStore.userRole !== "admin") {
+      throw new Error("Access denied. Admin privileges required.");
+    }
+
+    // Get current user info from auth store
+    user.value = authStore.user;
+    isAuthenticated.value = authStore.isAuthenticated;
+    userRole.value = authStore.userRole;
+  } catch (error) {
+    errorMessage.value = "Access denied. Admin privileges required.";
+  } finally {
+    authLoading.value = false;
+  }
+};
 
 // Methods
 const fetchDashboardData = async () => {
-  loading.value = true;
-  try {
-    // Simulate API calls - replace with actual API calls
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+  if (!isAuthenticated.value || userRole.value !== "admin") {
+    errorMessage.value = "Access denied. Admin privileges required.";
+    return;
+  }
 
-    // Initialize with default values - replace with actual data fetching
-    stats.value = {
-      totalPatients: 0,
-      totalStaff: 0,
-      todayAppointments: 0,
-      pendingAppointments: 0,
-      totalRecords: 0,
-      recentActivities: [],
+  loading.value = true;
+  errorMessage.value = "";
+
+  try {
+    // Fetch overview statistics
+    const overviewStats = await reportOps.getOverviewStats();
+
+    // Fetch today's appointments
+    const today = new Date().toISOString().split("T")[0];
+    const { data: todayAppts, error: todayError } = await supabase
+      .from("Appointment")
+      .select("*", { count: "exact" })
+      .gte("DateTime", `${today}T00:00:00`)
+      .lt("DateTime", `${today}T23:59:59`);
+
+    if (todayError) throw todayError;
+
+    // Fetch pending appointments
+    const { data: pendingAppts, error: pendingError } = await supabase
+      .from("Appointment")
+      .select("*", { count: "exact" })
+      .eq("Status", "Pending");
+
+    if (pendingError) throw pendingError;
+
+    // Fetch recent activities (notifications or recent records)
+    const { data: recentNotifications, error: notificationsError } =
+      await supabase
+        .from("Notification")
+        .select("*")
+        .order("CreatedAt", { ascending: false })
+        .limit(5);
+
+    if (notificationsError) throw notificationsError;
+
+    // Transform recent activities
+    const recentActivities = recentNotifications.map((notification) => ({
+      id: notification.NotificationID,
+      type: getActivityType(notification.Type),
+      message: notification.Title,
+      time: new Date(notification.CreatedAt).toLocaleString(),
+    }));
+
+    // Update stats
+    const newStats = {
+      totalPatients: overviewStats.totalPatients || 0,
+      totalStaff: overviewStats.totalStaff || 0,
+      todayAppointments: todayAppts?.length || 0,
+      pendingAppointments: pendingAppts?.length || 0,
+      totalRecords: overviewStats.totalRecords || 0,
+      recentActivities,
     };
+
+    stats.value = newStats;
   } catch (error) {
-    console.error("Error fetching dashboard data:", error);
+    // Provide more specific error handling
+    if (error.message?.includes("Failed to fetch overview statistics")) {
+      errorMessage.value =
+        "Unable to load dashboard statistics. Please check your database connection.";
+    } else if (
+      error.message?.includes("network") ||
+      error.message?.includes("fetch")
+    ) {
+      errorMessage.value =
+        "Network error. Please check your internet connection and try again.";
+    } else if (
+      error.message?.includes("permission") ||
+      error.message?.includes("unauthorized")
+    ) {
+      errorMessage.value =
+        "Access denied. You don't have permission to view this data.";
+    } else {
+      errorMessage.value =
+        error.message || "Failed to load dashboard data. Please try again.";
+    }
   } finally {
     loading.value = false;
   }
+};
+
+// Helper function to map notification types to activity types
+const getActivityType = (notificationType) => {
+  const typeMap = {
+    appointment_reminder: "appointment",
+    system_alert: "record",
+    patient_registration: "patient",
+    staff_update: "staff",
+  };
+  return typeMap[notificationType] || "info";
 };
 
 const getActivityIcon = (type) => {
@@ -63,254 +175,208 @@ const getActivityColor = (type) => {
   return colors[type] || "secondary";
 };
 
-onMounted(() => {
-  fetchDashboardData();
+// Initialize component
+onMounted(async () => {
+  await initializeAuth();
+
+  if (isAuthenticated.value && userRole.value === "admin") {
+    await fetchDashboardData();
+  } else {
+  }
 });
 </script>
 
 <template>
   <div class="admin-dashboard">
-    <!-- Header -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-      <div>
-        <h1 class="mb-2 animate-fade-in-left">Dashboard</h1>
-        <p class="text-muted mb-0 animate-fade-in-left animation-delay-100">
-          Welcome back, {{ user?.fullName || user?.username }}! Here's your
-          clinic overview.
+    <div class="container-fluid py-4">
+      <!-- Header -->
+      <div class="row mb-4">
+        <div class="col-12">
+          <h1 class="h3 mb-0">Admin Dashboard</h1>
+          <p class="text-muted">
+            Welcome back, {{ user?.fullName || "Admin" }}
+          </p>
+        </div>
+      </div>
+
+      <!-- Error Message -->
+      <div v-if="errorMessage" class="alert alert-danger" role="alert">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        {{ errorMessage }}
+      </div>
+
+      <!-- Loading State -->
+      <div v-if="authLoading || loading" class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2">
+          {{ authLoading ? "Initializing..." : "Loading dashboard data..." }}
         </p>
       </div>
-      <div class="animate-fade-in-right">
-        <button
-          class="btn btn-primary"
-          @click="fetchDashboardData"
-          :disabled="loading"
-        >
-          <i
-            class="bi bi-arrow-clockwise me-2"
-            :class="{ 'animate-spin': loading }"
-          ></i>
-          Refresh
-        </button>
-      </div>
-    </div>
 
-    <!-- Loading State -->
-    <div v-if="loading" class="text-center py-5">
-      <div
-        class="spinner-border text-primary animate-pulse"
-        role="status"
-        aria-live="polite"
-      >
-        <span class="visually-hidden">Loading dashboard data...</span>
-      </div>
-      <p class="mt-3 text-muted" role="status" aria-live="polite">
-        Loading dashboard data...
-      </p>
-
-      <!-- Skeleton loading for stats cards -->
-      <div class="row g-4 mt-4">
-        <div v-for="n in 4" :key="n" class="col-xl-3 col-lg-6 col-md-6">
-          <div class="card">
-            <div class="card-body text-center">
-              <div
-                class="loading-skeleton mb-3"
-                style="
-                  width: 60px;
-                  height: 60px;
-                  border-radius: 50%;
-                  margin: 0 auto;
-                "
-              ></div>
-              <div
-                class="loading-skeleton mb-2"
-                style="width: 40px; height: 32px; margin: 0 auto"
-              ></div>
-              <div
-                class="loading-skeleton"
-                style="width: 120px; height: 20px; margin: 0 auto"
-              ></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Stats Cards -->
-    <div v-else class="row g-4 mb-5">
-      <!-- Total Patients -->
-      <div class="col-xl-3 col-lg-6 col-md-6">
-        <div class="card stats-card animate-fade-in-up">
-          <div class="card-body text-center">
-            <div class="stats-icon mb-3">
-              <i class="bi bi-people-fill text-primary fs-1 animate-float"></i>
-            </div>
-            <h3 class="card-title text-primary mb-2">
-              {{ stats.totalPatients }}
-            </h3>
-            <p class="card-text text-muted mb-0">Total Patients</p>
-            <small class="text-muted"> Updated in real-time </small>
-          </div>
-        </div>
-      </div>
-
-      <!-- Total Staff -->
-      <div class="col-xl-3 col-lg-6 col-md-6">
-        <div class="card stats-card animate-fade-in-up animation-delay-100">
-          <div class="card-body text-center">
-            <div class="stats-icon mb-3">
-              <i
-                class="bi bi-person-badge-fill text-info fs-1 animate-float"
-              ></i>
-            </div>
-            <h3 class="card-title text-info mb-2">{{ stats.totalStaff }}</h3>
-            <p class="card-text text-muted mb-0">Healthcare Staff</p>
-            <small class="text-muted"> Status updated dynamically </small>
-          </div>
-        </div>
-      </div>
-
-      <!-- Today's Appointments -->
-      <div class="col-xl-3 col-lg-6 col-md-6">
-        <div class="card stats-card animate-fade-in-up animation-delay-200">
-          <div class="card-body text-center">
-            <div class="stats-icon mb-3">
-              <i
-                class="bi bi-calendar-day-fill text-warning fs-1 animate-float"
-              ></i>
-            </div>
-            <h3 class="card-title text-warning mb-2">
-              {{ stats.todayAppointments }}
-            </h3>
-            <p class="card-text text-muted mb-0">Today's Appointments</p>
-            <small class="text-muted">
-              Check schedule for next appointment
-            </small>
-          </div>
-        </div>
-      </div>
-
-      <!-- Pending Appointments -->
-      <div class="col-xl-3 col-lg-6 col-md-6">
-        <div class="card stats-card animate-fade-in-up animation-delay-300">
-          <div class="card-body text-center">
-            <div class="stats-icon mb-3">
-              <i
-                class="bi bi-clock-history text-secondary fs-1 animate-float"
-              ></i>
-            </div>
-            <h3 class="card-title text-secondary mb-2">
-              {{ stats.pendingAppointments }}
-            </h3>
-            <p class="card-text text-muted mb-0">Pending Approvals</p>
-            <small class="text-muted"> Pending review required </small>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Main Content Row -->
-    <div class="row">
-      <!-- Recent Activities -->
-      <div class="col-lg-8">
-        <div class="card animate-fade-in-left">
-          <div
-            class="card-header d-flex justify-content-between align-items-center"
-          >
-            <h5 class="mb-0">
-              <i class="bi bi-activity me-2"></i>
-              Recent Activities
-            </h5>
-            <router-link
-              to="/admin/activities"
-              class="btn btn-sm btn-outline-primary"
-            >
-              View All
-            </router-link>
-          </div>
-          <div class="card-body p-0">
-            <div class="activity-list">
-              <div
-                v-for="activity in stats.recentActivities"
-                :key="activity.id"
-                class="activity-item d-flex align-items-start p-3 border-bottom animate-fade-in-up"
-                :class="`animation-delay-${activity.id * 100}`"
-              >
-                <div class="activity-icon me-3">
-                  <i
-                    :class="`${getActivityIcon(
-                      activity.type
-                    )} text-${getActivityColor(activity.type)}`"
-                  ></i>
+      <!-- Dashboard Content -->
+      <div v-else-if="isAuthenticated && userRole === 'admin'">
+        <!-- Statistics Cards -->
+        <div class="row mb-4">
+          <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-primary shadow h-100 py-2">
+              <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                  <div class="col mr-2">
+                    <div
+                      class="text-xs font-weight-bold text-primary text-uppercase mb-1"
+                    >
+                      Total Patients
+                    </div>
+                    <div class="h5 mb-0 font-weight-bold text-gray-800">
+                      {{ stats.totalPatients }}
+                    </div>
+                  </div>
+                  <div class="col-auto">
+                    <i class="bi bi-people-fill fa-2x text-primary"></i>
+                  </div>
                 </div>
-                <div class="activity-content flex-grow-1">
-                  <p class="mb-1">{{ activity.message }}</p>
-                  <small class="text-muted">
-                    <i class="bi bi-clock me-1"></i>
-                    {{ activity.time }}
-                  </small>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-success shadow h-100 py-2">
+              <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                  <div class="col mr-2">
+                    <div
+                      class="text-xs font-weight-bold text-success text-uppercase mb-1"
+                    >
+                      Total Staff
+                    </div>
+                    <div class="h5 mb-0 font-weight-bold text-gray-800">
+                      {{ stats.totalStaff }}
+                    </div>
+                  </div>
+                  <div class="col-auto">
+                    <i class="bi bi-person-badge-fill fa-2x text-success"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-info shadow h-100 py-2">
+              <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                  <div class="col mr-2">
+                    <div
+                      class="text-xs font-weight-bold text-info text-uppercase mb-1"
+                    >
+                      Today's Appointments
+                    </div>
+                    <div class="h5 mb-0 font-weight-bold text-gray-800">
+                      {{ stats.todayAppointments }}
+                    </div>
+                  </div>
+                  <div class="col-auto">
+                    <i class="bi bi-calendar-check-fill fa-2x text-info"></i>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-warning shadow h-100 py-2">
+              <div class="card-body">
+                <div class="row no-gutters align-items-center">
+                  <div class="col mr-2">
+                    <div
+                      class="text-xs font-weight-bold text-warning text-uppercase mb-1"
+                    >
+                      Pending Appointments
+                    </div>
+                    <div class="h5 mb-0 font-weight-bold text-gray-800">
+                      {{ stats.pendingAppointments }}
+                    </div>
+                  </div>
+                  <div class="col-auto">
+                    <i class="bi bi-clock-fill fa-2x text-warning"></i>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Quick Actions & Medical Records Overview -->
-      <div class="col-lg-4">
-        <!-- Quick Actions -->
-        <div class="card animate-fade-in-right">
-          <div class="card-header">
-            <h5 class="mb-0">
-              <i class="bi bi-lightning-charge me-2"></i>
-              Quick Actions
-            </h5>
-          </div>
-          <div class="card-body">
-            <div class="d-grid gap-2">
-              <router-link to="/admin/account-creation" class="btn btn-primary">
-                <i class="bi bi-person-plus me-2"></i>
-                Create New Account
-              </router-link>
-              <router-link
-                to="/admin/appointments"
-                class="btn btn-outline-primary"
-              >
-                <i class="bi bi-calendar-plus me-2"></i>
-                Schedule Appointment
-              </router-link>
-              <router-link to="/admin/patients" class="btn btn-outline-info">
-                <i class="bi bi-person-lines-fill me-2"></i>
-                Register Patient
-              </router-link>
-              <router-link to="/admin/reports" class="btn btn-outline-success">
-                <i class="bi bi-bar-chart-line me-2"></i>
-                Generate Report
-              </router-link>
+        <!-- Main Content Row -->
+        <div class="row">
+          <!-- Recent Activities -->
+          <div class="col-xl-8 col-lg-7">
+            <div class="card shadow mb-4">
+              <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">
+                  Recent Activities
+                </h6>
+              </div>
+              <div class="card-body">
+                <div
+                  v-if="stats.recentActivities.length === 0"
+                  class="text-center py-4"
+                >
+                  <i class="bi bi-info-circle text-muted fa-3x mb-3"></i>
+                  <p class="text-muted">No recent activities to display</p>
+                </div>
+                <div v-else class="timeline">
+                  <div
+                    v-for="activity in stats.recentActivities"
+                    :key="activity.id"
+                    class="timeline-item"
+                  >
+                    <div class="timeline-marker">
+                      <i
+                        :class="`bi ${getActivityIcon(
+                          activity.type
+                        )} text-${getActivityColor(activity.type)}`"
+                      ></i>
+                    </div>
+                    <div class="timeline-content">
+                      <h6 class="timeline-title">{{ activity.message }}</h6>
+                      <p class="timeline-meta">{{ activity.time }}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <!-- Medical Records Overview -->
-        <div class="card mt-4 animate-fade-in-right animation-delay-200">
-          <div class="card-header">
-            <h5 class="mb-0">
-              <i class="bi bi-file-medical me-2"></i>
-              Medical Records
-            </h5>
-          </div>
-          <div class="card-body text-center">
-            <div class="records-icon mb-3">
-              <i class="bi bi-folder-fill text-success fs-1 animate-pulse"></i>
+          <!-- Quick Stats -->
+          <div class="col-xl-4 col-lg-5">
+            <div class="card shadow mb-4">
+              <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">Quick Stats</h6>
+              </div>
+              <div class="card-body">
+                <div class="d-flex align-items-center mb-3">
+                  <div class="text-primary mr-3">
+                    <i class="bi bi-file-medical fa-2x"></i>
+                  </div>
+                  <div>
+                    <div class="font-weight-bold">Total Medical Records</div>
+                    <div class="text-muted">{{ stats.totalRecords }}</div>
+                  </div>
+                </div>
+                <hr />
+                <div class="d-flex align-items-center">
+                  <div class="text-success mr-3">
+                    <i class="bi bi-check-circle fa-2x"></i>
+                  </div>
+                  <div>
+                    <div class="font-weight-bold">System Status</div>
+                    <div class="text-success">All Systems Operational</div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <h4 class="text-success mb-2">{{ stats.totalRecords }}</h4>
-            <p class="text-muted mb-3">Total Records</p>
-            <router-link
-              to="/admin/medical-records"
-              class="btn btn-success btn-sm"
-            >
-              <i class="bi bi-eye me-1"></i>
-              View All Records
-            </router-link>
           </div>
         </div>
       </div>
@@ -319,64 +385,297 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.stats-card {
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+.admin-dashboard {
+  min-height: 100vh;
+  background-color: #f8f9fc;
 }
 
-.stats-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+.card {
+  border: none;
+  border-radius: 0.35rem;
 }
 
-.stats-icon {
+.border-left-primary {
+  border-left: 0.25rem solid #4e73df !important;
+}
+
+.border-left-success {
+  border-left: 0.25rem solid #1cc88a !important;
+}
+
+.border-left-info {
+  border-left: 0.25rem solid #36b9cc !important;
+}
+
+.border-left-warning {
+  border-left: 0.25rem solid #f6c23e !important;
+}
+
+.text-primary {
+  color: #5a5c69 !important;
+}
+
+.text-gray-800 {
+  color: #5a5c69 !important;
+}
+
+.font-weight-bold {
+  font-weight: 700 !important;
+}
+
+.text-xs {
+  font-size: 0.7rem;
+}
+
+.text-uppercase {
+  text-transform: uppercase !important;
+}
+
+.timeline {
   position: relative;
+  padding-left: 30px;
 }
 
-.activity-item {
-  transition: background-color 0.2s ease;
+.timeline::before {
+  content: "";
+  position: absolute;
+  left: 15px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #e9ecef;
 }
 
-.activity-item:hover {
-  background-color: rgba(0, 0, 0, 0.02);
+.timeline-item {
+  position: relative;
+  margin-bottom: 20px;
 }
 
-.activity-icon {
-  width: 40px;
-  height: 40px;
+.timeline-marker {
+  position: absolute;
+  left: -22px;
+  top: 0;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  background-color: rgba(0, 0, 0, 0.05);
+  background: white;
+  border: 2px solid #e9ecef;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
 }
 
-.records-icon {
-  opacity: 0.8;
+.timeline-marker i {
+  font-size: 8px;
 }
 
-/* Animation for spinner */
-@keyframes spin {
-  0% {
-    transform: rotate(0deg);
+.timeline-content {
+  background: white;
+  padding: 15px;
+  border-radius: 0.35rem;
+  box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.timeline-title {
+  margin: 0 0 5px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #5a5c69;
+}
+
+.timeline-meta {
+  margin: 0;
+  font-size: 12px;
+  color: #6c757d;
+}
+
+.spinner-border {
+  width: 3rem;
+  height: 3rem;
+}
+
+/* Mobile-first responsive design */
+@media (max-width: 767px) {
+  .admin-dashboard {
+    padding: 0;
   }
-  100% {
-    transform: rotate(360deg);
+
+  .container-fluid {
+    padding: 0 var(--space-sm);
+  }
+
+  /* Header adjustments */
+  .row.mb-4 .col-12 {
+    padding: 0;
+  }
+
+  h1.h3 {
+    font-size: 1.5rem;
+    margin-bottom: var(--space-xs);
+  }
+
+  .text-muted {
+    font-size: 0.875rem;
+  }
+
+  /* Stats cards - stack vertically on mobile */
+  .row.mb-4 {
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .col-xl-3 {
+    padding: 0 var(--space-xs) var(--space-md);
+  }
+
+  .card.border-left-primary,
+  .card.border-left-success,
+  .card.border-left-info,
+  .card.border-left-warning {
+    margin-bottom: var(--space-md);
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .card-body {
+    padding: var(--space-md);
+    text-align: center;
+  }
+
+  .text-xs {
+    font-size: 0.75rem;
+  }
+
+  .h5 {
+    font-size: 1.5rem;
+    margin-bottom: var(--space-xs);
+  }
+
+  .fa-2x {
+    font-size: 1.5rem !important;
+  }
+
+  /* Main content adjustments */
+  .row.mb-4 .col-xl-8,
+  .row.mb-4 .col-lg-7 {
+    padding: 0;
+    margin-bottom: var(--space-lg);
+  }
+
+  .row.mb-4 .col-xl-4,
+  .row.mb-4 .col-lg-5 {
+    padding: 0;
+  }
+
+  .card.shadow {
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .card-header {
+    padding: var(--space-md);
+    background: linear-gradient(135deg, #f8f9fc 0%, #e9ecef 100%);
+    border-bottom: 1px solid #dee2e6;
+  }
+
+  .card-header h6 {
+    font-size: 1rem;
+    margin: 0;
+  }
+
+  .card-body {
+    padding: var(--space-md);
+  }
+
+  /* Timeline adjustments */
+  .timeline {
+    padding-left: 20px;
+  }
+
+  .timeline-item {
+    margin-bottom: var(--space-md);
+  }
+
+  .timeline-marker {
+    width: 12px;
+    height: 12px;
+    left: -18px;
+  }
+
+  .timeline-marker i {
+    font-size: 6px;
+  }
+
+  .timeline-content {
+    padding: var(--space-sm);
+    border-radius: 8px;
+  }
+
+  .timeline-title {
+    font-size: 0.875rem;
+  }
+
+  .timeline-meta {
+    font-size: 0.75rem;
+  }
+
+  /* Quick stats adjustments */
+  .d-flex.align-items-center.mb-3 {
+    flex-direction: column;
+    text-align: center;
+    margin-bottom: var(--space-md);
+  }
+
+  .text-primary.mr-3,
+  .text-success.mr-3 {
+    margin-right: 0;
+    margin-bottom: var(--space-xs);
+  }
+
+  .font-weight-bold {
+    font-size: 0.875rem;
+  }
+
+  .text-muted {
+    font-size: 0.75rem;
+  }
+
+  /* Touch-friendly interactions */
+  .card:hover {
+    transform: none; /* Disable hover effects on mobile */
+  }
+
+  /* Loading and error states */
+  .text-center.py-5 {
+    padding: var(--space-xl) 0;
+  }
+
+  .spinner-border {
+    width: 2rem;
+    height: 2rem;
   }
 }
 
-.animate-spin {
-  animation: spin 1s linear infinite;
-}
-
-/* Responsive adjustments */
-@media (max-width: 768px) {
-  .stats-card .card-body {
-    padding: 1.5rem 1rem;
+/* Small tablets (768px to 1023px) */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .container-fluid {
+    padding: 0 var(--space-md);
   }
 
-  .activity-item {
-    padding: 1rem;
+  .col-xl-3 {
+    margin-bottom: var(--space-md);
+  }
+
+  .card-body {
+    padding: var(--space-lg);
+  }
+
+  .h5 {
+    font-size: 1.75rem;
+  }
+
+  .fa-2x {
+    font-size: 2rem !important;
   }
 }
 </style>

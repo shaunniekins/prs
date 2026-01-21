@@ -1,5 +1,3 @@
-import { createRouter, createWebHistory } from "vue-router";
-
 // Patient Views
 import PatientDashboard from "../views/patient/Dashboard.vue";
 import MyAppointments from "../views/patient/MyAppointments.vue";

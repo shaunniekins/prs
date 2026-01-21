@@ -1,12 +1,11 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { ref, computed, onMounted, nextTick, watch } from "vue";
+import { useRoute } from "vue-router";
 import { useAuthStore } from "../stores/auth";
 import RoleBasedSidebar from "../components/RoleBasedSidebar.vue";
 import SidebarBackdrop from "../components/SidebarBackdrop.vue";
 
 const route = useRoute();
-const router = useRouter();
 const authStore = useAuthStore();
 const isSidebarVisible = ref(true); // Default to visible for authenticated users
 const isSidebarCollapsed = ref(false); // Default to not collapsed
@@ -15,9 +14,15 @@ const isSidebarCollapsed = ref(false); // Default to not collapsed
 const isAuthenticated = computed(() => authStore.isAuthenticated);
 const user = computed(() => authStore.user);
 
-// Check if current route is login or register page
+// Check if current route is login page or other auth pages
 const hideSidebar = computed(() => {
-  return route.path === "/login" || route.path === "/register";
+  const authPaths = [
+    "/login",
+    "/register",
+    "/forgot-password",
+    "/reset-password",
+  ];
+  return authPaths.includes(route.path);
 });
 
 const toggleSidebar = () => {
@@ -36,23 +41,6 @@ const closeSidebar = () => {
   isSidebarVisible.value = false;
 };
 
-const navigateToProfile = () => {
-  router.push("/profile");
-};
-
-const handleLogout = () => {
-  authStore.logout();
-  router.push("/login");
-};
-
-// Enhanced keyboard navigation for navbar
-const handleNavbarKeyDown = (event) => {
-  if (event.key === "Enter" || event.key === " ") {
-    event.preventDefault();
-    navigateToProfile();
-  }
-};
-
 // Focus management for better accessibility
 const focusMainContent = () => {
   const mainContent = document.getElementById("main-content");
@@ -60,6 +48,21 @@ const focusMainContent = () => {
     mainContent.focus();
   }
 };
+
+onMounted(() => {
+  // Focus management for main content
+  nextTick(() => {
+    focusMainContent();
+  });
+});
+
+// Watch for authentication state changes (simplified)
+watch(isAuthenticated, (newVal) => {
+  if (!newVal) {
+    // User is no longer authenticated
+    // Additional cleanup can be added here if needed
+  }
+});
 </script>
 
 <template>
@@ -108,63 +111,12 @@ const focusMainContent = () => {
           </div>
 
           <!-- Center: App name with hover animation -->
-          <div>
+          <div class="flex-center">
             <div class="system-title animate-fade-in">
               <i class="bi bi-hospital me-2 animate-pulse"></i>
               <span class="title-text">Patient Record System</span>
             </div>
           </div>
-
-          <!-- Right side: Profile picture (only for authenticated users) -->
-          <div
-            v-if="isAuthenticated && !hideSidebar"
-            class="d-flex align-center animate-fade-in-left"
-          >
-            <div class="profile-section">
-              <div
-                @click="navigateToProfile"
-                @keydown="handleNavbarKeyDown"
-                class="profile-picture-nav animate-fade-in"
-                tabindex="0"
-                role="button"
-                :aria-label="`Go to profile for ${
-                  user?.fullName || user?.username
-                }`"
-                style="min-height: 48px; padding: 8px 12px; cursor: pointer"
-              >
-                <div class="d-flex align-items-center">
-                  <!-- Show profile picture if exists, otherwise show default icon -->
-                  <div
-                    v-if="user?.profilePicture"
-                    class="profile-img-container"
-                  >
-                    <img
-                      :src="user.profilePicture"
-                      alt="Profile"
-                      class="profile-img"
-                    />
-                  </div>
-                  <div v-else class="profile-avatar">
-                    <span>{{ user?.username?.[0]?.toUpperCase() || "U" }}</span>
-                  </div>
-                  <span class="ms-2 fw-medium">{{
-                    user?.fullName || user?.username
-                  }}</span>
-                </div>
-              </div>
-              <button
-                @click="handleLogout"
-                class="btn btn-outline-danger btn-sm ms-3 logout-btn"
-                title="Logout"
-                style="min-height: 48px; padding: 8px 16px; font-size: 0.875rem"
-              >
-                <i class="bi bi-box-arrow-right me-1"></i>
-                <span class="d-none d-sm-inline">Logout</span>
-              </button>
-            </div>
-          </div>
-          <!-- Empty div for balance when no profile is shown -->
-          <div v-else></div>
         </div>
       </nav>
 
@@ -224,6 +176,7 @@ const focusMainContent = () => {
 
   .navbar {
     padding: var(--space-xs) var(--space-sm);
+    min-height: 56px;
   }
 
   .system-title {
@@ -240,19 +193,63 @@ const focusMainContent = () => {
   }
 
   .logout-btn {
-    min-height: var(--touch-target-min);
-    padding: var(--space-xs) var(--space-sm);
-    font-size: var(--font-size-xs);
+    display: none;
+    min-height: var(--touch-target-min, 44px);
+    min-width: var(--touch-target-min, 44px);
+    padding: var(--space-xs, 0.125rem) var(--space-sm, 0.5rem);
+    font-size: var(--font-size-xs, 0.75rem);
+    border-radius: 4px;
   }
 
-  .logout-btn span {
-    display: none; /* Hide text on very small screens */
+  .logout-btn span:not(.spinner-border) {
+    display: none; /* Hide text on very small screens, keep spinner visible */
+  }
+
+  .logout-btn .btn-content {
+    gap: 0; /* Remove gap on very small screens */
+  }
+
+  .logout-btn:focus {
+    box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.3);
   }
 
   .menu-toggle-btn {
     min-height: var(--touch-target-min);
     min-width: var(--touch-target-min);
     padding: var(--space-sm);
+  }
+
+  /* Mobile-first adjustments */
+  .app-container {
+    flex-direction: column;
+  }
+
+  .main-content {
+    min-height: calc(100vh - 56px);
+    padding: 0;
+  }
+
+  main {
+    padding: var(--space-sm) var(--space-sm);
+    min-height: calc(100vh - 120px);
+  }
+
+  .navbar .container-fluid {
+    padding: 0 var(--space-sm);
+  }
+
+  .flex-center {
+    justify-content: flex-start;
+    margin-left: 60px; /* Space for menu button */
+  }
+
+  .system-title {
+    margin: 0;
+    font-size: var(--font-size-sm);
+  }
+
+  .title-text {
+    font-size: var(--font-size-sm);
   }
 }
 
@@ -268,6 +265,7 @@ const focusMainContent = () => {
 
   .navbar {
     padding: var(--space-sm) var(--space-md);
+    min-height: 60px;
   }
 
   .system-title {
@@ -280,14 +278,98 @@ const focusMainContent = () => {
   }
 
   .logout-btn {
-    min-height: var(--touch-target-comfortable);
-    padding: var(--space-sm) var(--space-md);
-    font-size: var(--font-size-sm);
+    display: none;
+    min-height: var(--touch-target-comfortable, 48px);
+    padding: var(--space-sm, 0.5rem) var(--space-md, 1rem);
+    font-size: var(--font-size-sm, 0.875rem);
+    border-radius: 6px;
+  }
+
+  .logout-btn .btn-content {
+    gap: var(--space-xs, 0.25rem);
+  }
+
+  /* Mobile-first adjustments */
+  .main-content {
+    min-height: calc(100vh - 60px);
+  }
+
+  main {
+    padding: var(--space-md) var(--space-md);
+    min-height: calc(100vh - 140px);
+  }
+
+  .navbar .container-fluid {
+    padding: 0 var(--space-md);
+  }
+
+  .flex-center {
+    justify-content: flex-start;
+    margin-left: 64px; /* Space for menu button */
+  }
+
+  .system-title {
+    margin: 0;
+    font-size: var(--font-size-base);
+  }
+
+  .title-text {
+    font-size: var(--font-size-base);
   }
 }
 
 main {
   min-height: calc(100vh - 170px); /* Subtract header and footer height */
+}
+
+/* Mobile-specific adjustments */
+@media (max-width: 767px) {
+  main {
+    min-height: calc(100vh - 120px); /* Adjust for mobile navbar */
+    padding: var(--space-sm);
+  }
+
+  .container-fluid {
+    padding-left: var(--space-sm);
+    padding-right: var(--space-sm);
+  }
+
+  /* Ensure proper spacing for mobile content */
+  .main-content {
+    padding: 0;
+  }
+
+  /* Mobile navbar adjustments */
+  .navbar {
+    position: sticky;
+    top: 0;
+    z-index: 1020;
+    background: var(--light-color);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  }
+
+  /* Mobile menu button positioning */
+  .navbar .d-flex {
+    width: 100%;
+  }
+
+  /* Center title on mobile */
+  .flex-center {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-left: 0;
+  }
+
+  .system-title {
+    margin: 0;
+  }
+
+  /* Touch-friendly menu button */
+  .menu-toggle-btn {
+    position: relative;
+    z-index: 1021;
+  }
 }
 
 /* Enhanced focus styles for main content */
@@ -307,6 +389,7 @@ main:focus {
 
   .navbar {
     padding: var(--space-sm) var(--space-md);
+    min-height: 64px;
   }
 
   .system-title {
@@ -323,8 +406,15 @@ main:focus {
   }
 
   .logout-btn {
-    font-size: var(--font-size-sm);
-    padding: var(--space-sm) var(--space-md);
+    display: none;
+    font-size: var(--font-size-sm, 0.875rem);
+    padding: var(--space-sm, 0.5rem) var(--space-md, 1rem);
+    border-radius: 6px;
+    min-height: var(--touch-target-comfortable);
+  }
+
+  .logout-btn .btn-content {
+    gap: var(--space-xs, 0.25rem);
   }
 }
 
@@ -340,6 +430,7 @@ main:focus {
 
   .navbar {
     padding: var(--space-md) var(--space-lg);
+    min-height: 72px;
   }
 
   .system-title {
@@ -356,8 +447,14 @@ main:focus {
   }
 
   .logout-btn {
-    font-size: var(--font-size-base);
-    padding: var(--space-md) var(--space-lg);
+    font-size: var(--font-size-base, 1rem);
+    padding: var(--space-md, 1rem) var(--space-lg, 1.5rem);
+    border-radius: 8px;
+    min-height: var(--touch-target-comfortable);
+  }
+
+  .logout-btn .btn-content {
+    gap: var(--space-sm, 0.5rem);
   }
 }
 
@@ -408,7 +505,16 @@ main:focus {
   background-color: var(--light-color);
   color: var(--text-color);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  transition: background-color 0.3s, color 0.3s;
+  transition:
+    background-color 0.3s,
+    color 0.3s;
+}
+
+.flex-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
 }
 
 .navbar-brand {
@@ -451,31 +557,7 @@ main:focus {
   letter-spacing: 0.5px;
 }
 
-/* Profile picture in navbar styling */
-.profile-nav-item {
-  margin-left: auto;
-}
-
-.profile-section {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.profile-picture-nav {
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-  padding: 8px 12px;
-  border-radius: 20px;
-  transition: background-color 0.2s;
-  min-height: var(--touch-target-comfortable, 48px);
-}
-
-.profile-picture-nav:hover {
-  background-color: rgba(0, 0, 0, 0.05);
-}
-
+/* Enhanced logout button styling */
 .logout-btn {
   font-size: 0.875rem;
   padding: 8px 16px;
@@ -487,72 +569,61 @@ main:focus {
   align-items: center;
   justify-content: center;
   gap: var(--space-xs, 0.25rem);
+  position: relative;
+  border: 2px solid var(--danger-color, #dc3545);
+  background-color: transparent;
+  color: var(--danger-color, #dc3545);
+  font-weight: 500;
+  letter-spacing: 0.025em;
 }
 
-.logout-btn:hover {
+.logout-btn:hover:not(:disabled):not(.loading) {
   background-color: var(--danger-color, #dc3545);
   border-color: var(--danger-color, #dc3545);
   color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(220, 53, 69, 0.3);
 }
 
-.profile-img-container {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+.logout-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.25);
+  border-color: var(--danger-color, #dc3545);
 }
 
-.profile-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+.logout-btn:active:not(:disabled):not(.loading) {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(220, 53, 69, 0.3);
 }
 
-.profile-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background-color: var(--primary-gradient-start);
+.logout-btn:disabled,
+.logout-btn.loading {
+  opacity: 0.7;
+  cursor: not-allowed;
+  background-color: var(--danger-color, #dc3545);
+  color: white;
+  border-color: var(--danger-color, #dc3545);
+}
+
+/* Loading spinner animation */
+.logout-btn .spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Button content layout */
+.logout-btn .btn-content {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  font-size: 1rem;
-  font-weight: 500;
-}
-
-/* Menu button animation */
-.menu-toggle-btn {
-  position: relative;
-  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-.menu-toggle-btn:hover {
-  transform: scale(1.1);
-}
-
-.menu-toggle-btn:active {
-  transform: scale(0.95);
-}
-
-/* System title animation enhancement */
-.system-title {
-  display: flex;
-  align-items: center;
-  padding: 6px 12px;
-  border-radius: 8px;
-  background: linear-gradient(
-    120deg,
-    var(--primary-gradient-start) 0%,
-    var(--primary-gradient-end) 100%
-  );
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-  transition: all 0.3s ease;
-}
-
-.system-title:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
+  gap: var(--space-xs, 0.25rem);
 }
 </style>

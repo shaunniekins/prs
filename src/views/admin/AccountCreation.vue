@@ -1,208 +1,234 @@
 <script setup>
 import { ref, computed, onMounted } from "vue";
-import { useStore } from "vuex";
+import { useRouter } from "vue-router";
+import { authService, supabase } from "@/services/supabaseService.js";
+import api from "@/services/api.js";
+import { useNotify } from "@/composables/useNotify.js";
+import { useAuthStore } from "@/stores/auth.js";
+import { VueDatePicker } from "@vuepic/vue-datepicker";
+import "@vuepic/vue-datepicker/dist/main.css";
 
-// Store
-const store = useStore();
+// Auth store
+const authStore = useAuthStore();
 
 // Reactive data
-const loading = ref(false);
-const showCreateModal = ref(false);
+const creatingAccount = ref(false);
+const formErrors = ref({});
+const createdAccounts = ref([]);
+const accountHistory = ref([]);
+const loadingHistory = ref(false);
+const { notify } = useNotify();
+const router = useRouter();
 const showPreviewModal = ref(false);
-const activeTab = ref("create");
-const sendingCredentials = ref(false);
+const showSuccessModal = ref(false);
+const createdAccountForEmail = ref(null);
+const sendingCredentialsFromModal = ref(false);
+const credentialsSentFromModal = ref(false);
+const selectedAccount = ref(null);
 
 const accountForm = ref({
-  accountType: "patient",
-  firstName: "",
-  surname: "",
-  suffix: "",
-  birthDate: "",
-  gender: "Male",
-  contactNumber: "",
+  username: "", // Auto-generated
   email: "",
+  role: "Staff", // Patient or Staff
+  firstName: "",
+  lastName: "",
+  suffix: "",
+  gender: "",
+  contactNumber: "",
   address: "",
-  role: "Nurse",
-  emergencyContact: "",
+  emergencyContactNumber: "",
+  birthdate: null, // New birthdate field
 });
 
-const createdAccounts = ref([
-  {
-    id: 1,
-    type: "patient",
-    name: "Ana Reyes",
-    username: "ana.reyes",
-    email: "ana.reyes@email.com",
-    role: "Patient",
-    status: "active",
-    createdAt: "2024-10-13T16:00:00",
-    credentialsSent: true,
-    lastLogin: null,
-  },
-]);
+// Computed property for generated password based on birthdate
+// Computed property for generated password (Surname_Firstname<last-4-digits-phone>)
+const generatedPassword = computed(() => {
+  const surname = accountForm.value.lastName || "";
+  const firstName = accountForm.value.firstName || "";
+  const contact = accountForm.value.contactNumber || "";
+
+  const cleanSurname = surname.trim().replace(/\s+/g, "");
+  const cleanFirstName = firstName.trim().replace(/\s+/g, "");
+  const cleanContact = contact.replace(/\D/g, "");
+  const lastFourDigits = cleanContact.slice(-4) || "0000";
+
+  if (!cleanSurname && !cleanFirstName) return "";
+
+  return `${cleanSurname}_${cleanFirstName}${lastFourDigits}`;
+});
 
 // Computed properties
-const user = computed(() => store.state.user);
-const generatedCredentials = computed(() => {
-  if (!accountForm.value.firstName || !accountForm.value.surname) {
-    return null;
+const generateUsername = () => {
+  if (!accountForm.value.firstName || !accountForm.value.lastName) return "";
+  const first = accountForm.value.firstName
+    .toLowerCase()
+    .replace(/[^a-z]/g, "");
+  const last = accountForm.value.lastName.toLowerCase().replace(/[^a-z]/g, "");
+  return `${first}.${last}`;
+};
+
+const validateBirthdate = (birthdate) => {
+  if (!birthdate) {
+    return "Birthdate is required.";
+  }
+  const date = new Date(birthdate);
+  if (isNaN(date.getTime())) {
+    return "Invalid date format. Please use MM-DD-YYYY.";
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (date > today) {
+    return "Birthdate cannot be in the future.";
+  }
+  return null;
+};
+
+const generatePasswordFromBirthdate = (birthdateString) => {
+  if (!birthdateString) {
+    return { password: null, error: "Birthdate cannot be empty." };
   }
 
-  const firstName = accountForm.value.firstName.toLowerCase();
-  const surname = accountForm.value.surname.toLowerCase();
-  const username = `${firstName}.${surname}`;
-
-  // Generate password based on birthdate
-  let password = "default123";
-  if (accountForm.value.birthDate) {
-    const birthDate = new Date(accountForm.value.birthDate);
-    const month = birthDate.getMonth() + 1;
-    const day = birthDate.getDate();
-    const year = birthDate.getFullYear().toString().substr(-2);
-    password = `${month.toString().padStart(2, "0")}-${day
-      .toString()
-      .padStart(2, "0")}-${year}`;
+  const parts = birthdateString.split("/");
+  if (parts.length !== 3) {
+    return {
+      password: null,
+      error: "Invalid birthdate format. Expected MM/DD/YYYY.",
+    };
   }
+
+  const month = parts[0];
+  const day = parts[1];
+  const year = parts[2];
+
+  const date = new Date(`${year}-${month}-${day}`);
+  if (isNaN(date.getTime())) {
+    return {
+      password: null,
+      error: "Invalid birthdate. Please provide a valid date.",
+    };
+  }
+
+  const formattedMonth = String(date.getMonth() + 1).padStart(2, "0");
+  const formattedDay = String(date.getDate()).padStart(2, "0");
+  const formattedYear = String(date.getFullYear()).slice(-2);
 
   return {
-    username: username,
-    password: password,
-    email: accountForm.value.email,
+    password: `${formattedMonth}-${formattedDay}-${formattedYear}`,
+    error: null,
   };
+};
+
+const isFormValid = computed(() => {
+  formErrors.value = {};
+
+  // Required field validations
+  if (!accountForm.value.firstName?.trim()) {
+    formErrors.value.firstName = "First name is required.";
+  } else if (accountForm.value.firstName.length < 2) {
+    formErrors.value.firstName = "First name must be at least 2 characters.";
+  } else if (!/^[a-zA-Z\s-']+$/.test(accountForm.value.firstName)) {
+    formErrors.value.firstName =
+      "First name can only contain letters, spaces, hyphens, and apostrophes.";
+  }
+
+  if (!accountForm.value.lastName?.trim()) {
+    formErrors.value.lastName = "Last name is required.";
+  } else if (accountForm.value.lastName.length < 2) {
+    formErrors.value.lastName = "Last name must be at least 2 characters.";
+  } else if (!/^[a-zA-Z\s-']+$/.test(accountForm.value.lastName)) {
+    formErrors.value.lastName =
+      "Last name can only contain letters, spaces, hyphens, and apostrophes.";
+  }
+
+  if (!accountForm.value.email?.trim()) {
+    formErrors.value.email = "Email is required.";
+  } else if (!/^[\w-.]+@([\w-]+\.)+[\w-]{2,4}$/.test(accountForm.value.email)) {
+    formErrors.value.email = "Invalid email format.";
+  }
+
+  // Contact number validation
+  if (accountForm.value.contactNumber?.trim()) {
+    const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
+    if (
+      !phoneRegex.test(
+        accountForm.value.contactNumber.replace(/[\s\-\(\)]/g, ""),
+      )
+    ) {
+      formErrors.value.contactNumber = "Invalid phone number format.";
+    }
+  }
+
+  // Emergency contact validation
+  if (accountForm.value.emergencyContactNumber?.trim()) {
+    const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
+    if (
+      !phoneRegex.test(
+        accountForm.value.emergencyContactNumber.replace(/[\s\-\(\)]/g, ""),
+      )
+    ) {
+      formErrors.value.emergencyContactNumber =
+        "Invalid emergency contact number format.";
+    }
+  }
+
+  // Role-specific validations
+  // if (accountForm.value.role === "Patient") {
+  //   const birthdateError = validateBirthdate(accountForm.value.birthdate);
+  //   if (birthdateError) {
+  //     formErrors.value.birthdate = birthdateError;
+  //   }
+  // }
+
+  if (accountForm.value.role === "Staff") {
+    // Note: Department and Specialty validation removed as fields are not in current schema
+  }
+
+  // Username generation check
+  const generatedUsername = generateUsername();
+  if (!generatedUsername) {
+    formErrors.value.general =
+      "Unable to generate username. Please check first and last names.";
+  }
+
+  // Password generation check - commented out to allow creation without birthdate
+  // if (!accountForm.value.generatedPassword) {
+  //   formErrors.value.general =
+  //     "Unable to generate password. Please check birthdate.";
+  // }
+
+  return Object.keys(formErrors.value).length === 0;
 });
 
-// Methods
-const resetForm = () => {
-  accountForm.value = {
-    accountType: "patient",
-    firstName: "",
-    surname: "",
-    suffix: "",
-    birthDate: "",
-    gender: "Male",
-    contactNumber: "",
-    email: "",
-    address: "",
-    role: "Nurse",
-    emergencyContact: "",
-  };
-};
-
-const openCreateModal = () => {
-  resetForm();
-  showCreateModal.value = true;
-};
-
-const closeModals = () => {
-  showCreateModal.value = false;
-  showPreviewModal.value = false;
-};
-
-const generateCredentials = () => {
-  // Logic to generate unique username if duplicate exists
-  let username = generatedCredentials.value.username;
-  const existingUsernames = createdAccounts.value.map((acc) => acc.username);
-  let counter = 2;
-
-  while (existingUsernames.includes(username)) {
-    username = `${generatedCredentials.value.username}${counter}`;
-    counter++;
-  }
-
-  return {
-    ...generatedCredentials.value,
-    username: username,
-  };
-};
-
-const sendCredentialsViaGmail = async (credentials) => {
-  try {
-    console.log("Sending credentials via Gmail:", credentials);
-    // Simulate Gmail API call
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-
-    // In a real application, this would use Gmail API or Nodemailer
-    return {
-      success: true,
-      message: "Credentials sent successfully via Gmail",
-    };
-  } catch (error) {
-    console.error("Error sending Gmail:", error);
-    return { success: false, message: "Failed to send via Gmail" };
-  }
-};
-
-const sendCredentialsViaSMS = async (credentials) => {
-  try {
-    console.log("Sending credentials via SMS:", credentials);
-    // Simulate SMS sending
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    // In a real application, this would use SMS gateway or email-to-SMS
-    return { success: true, message: "Credentials sent successfully via SMS" };
-  } catch (error) {
-    console.error("Error sending SMS:", error);
-    return { success: false, message: "Failed to send via SMS" };
-  }
-};
-
-const sendCredentials = async () => {
-  if (!generatedCredentials.value) return;
-
-  sendingCredentials.value = true;
-
-  try {
-    const credentials = generateCredentials();
-
-    // Send via both Gmail and SMS
-    const [gmailResult, smsResult] = await Promise.all([
-      sendCredentialsViaGmail(credentials),
-      sendCredentialsViaSMS(credentials),
-    ]);
-
-    // Create account record
-    const newAccount = {
-      id: Math.max(...createdAccounts.value.map((acc) => acc.id)) + 1,
-      type: accountForm.value.accountType,
-      name: `${accountForm.value.firstName} ${accountForm.value.surname}`,
-      username: credentials.username,
-      email: credentials.email,
-      role:
-        accountForm.value.accountType === "patient"
-          ? "Patient"
-          : accountForm.value.role,
-      status: "active",
-      createdAt: new Date().toISOString(),
-      credentialsSent: gmailResult.success || smsResult.success,
-      lastLogin: null,
-    };
-
-    createdAccounts.value.unshift(newAccount);
-
-    // Show success message
-    const successMessage = `
-      Account created successfully!
-
-      Gmail: ${gmailResult.message}
-      SMS: ${smsResult.message}
-
-      Username: ${credentials.username}
-      Temporary Password: ${credentials.password}
-    `;
-
-    alert(successMessage);
-    closeModals();
-  } catch (error) {
-    console.error("Error creating account:", error);
-    alert("Error creating account. Please try again.");
-  } finally {
-    sendingCredentials.value = false;
-  }
-};
-
 const previewCredentials = () => {
-  if (generatedCredentials.value) {
+  formErrors.value = {};
+  if (isFormValid.value) {
+    selectedAccount.value = {
+      firstName: accountForm.value.firstName,
+      lastName: accountForm.value.lastName,
+      email: accountForm.value.email,
+      role: accountForm.value.role,
+      username: generateUsername(),
+      password: generatedPassword.value,
+      isHistory: false,
+    };
     showPreviewModal.value = true;
+  }
+};
+
+const copyToClipboard = async (text) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    notify("Copied to clipboard!", { type: "success", duration: 2000 });
+  } catch (error) {
+    console.error("Failed to copy:", error);
+    // Fallback for older browsers
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    document.body.appendChild(textArea);
+    textArea.select();
+    document.execCommand("copy");
+    document.body.removeChild(textArea);
+    notify("Copied to clipboard!", { type: "success", duration: 2000 });
   }
 };
 
@@ -218,9 +244,371 @@ const formatDateTime = (dateTime) => {
   return new Date(dateTime).toLocaleString();
 };
 
-onMounted(() => {
-  // Component mounted
+const loadingAccounts = ref(false);
+
+const fetchCreatedAccounts = async () => {
+  loadingAccounts.value = true;
+  try {
+    const { data: users, error } = await supabase.from("Users").select(`
+        UserID,
+        Username,
+        Email,
+        RoleName,
+        fullName,
+        created_at,
+        Patients:Patients!Patients_UserID_fkey ( UserID, FirstName, Surname ),
+        Staff ( UserID, FirstName, Surname )
+      `);
+
+    if (error) {
+      throw error;
+    }
+
+    createdAccounts.value = users.map((user) => {
+      const isPatient = user.RoleName === "patient";
+      // Safely access profile arrays which might be null
+      const profile = isPatient ? user.Patients?.[0] : user.Staff?.[0];
+      return {
+        id: user.UserID,
+        type: isPatient ? "patient" : "staff",
+        name: user.fullName,
+        firstName: profile?.FirstName || "",
+        surname: profile?.Surname || "",
+        username: user.Username,
+        email: user.Email,
+        role: user.RoleName,
+        status: "active", // Assuming all fetched accounts are active
+        createdAt: user.created_at,
+        credentialsSent: false, // This information is not stored in the DB
+        lastLogin: null, // This information is not available
+      };
+    });
+  } catch (error) {
+    console.error("Error loading accounts:", error);
+    notify(`Error loading accounts: ${error.message}`, { type: "error" });
+    createdAccounts.value = [];
+  } finally {
+    loadingAccounts.value = false;
+  }
+};
+
+const fetchAccountCreationHistory = async (params = {}) => {
+  loadingHistory.value = true;
+  try {
+    const response = await api.get("/admin/accounts/account-creation-history", {
+      params,
+    });
+    accountHistory.value = response.data;
+  } catch (error) {
+    console.error("Error fetching account creation history:", error);
+    notify(`Error fetching account creation history: ${error.message}`, {
+      type: "error",
+    });
+  } finally {
+    loadingHistory.value = false;
+  }
+};
+
+const exportHistory = () => {
+  try {
+    const headers = [
+      "Account Holder,Type,Username,Email,Role,Status,Created,Last Login",
+    ];
+    const rows = accountHistory.value.map((acc) => {
+      const lastLogin = acc.lastLogin
+        ? formatDateTime(acc.lastLogin).replace(/,/g, "")
+        : "Never";
+      return `"${acc.name}","${acc.type}","${acc.username}","${acc.email}","${acc.role}","${acc.status}","${formatDateTime(acc.createdAt).replace(/,/g, "")}","${lastLogin}"`;
+    });
+    const csvContent = headers.concat(rows).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute(
+      "download",
+      `account_history_${new Date().toISOString().split("T")[0]}.csv`,
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } catch (error) {
+    console.error("Export failed:", error);
+    notify("Failed to export history", { type: "error" });
+  }
+};
+
+const openPreviewModal = (account) => {
+  selectedAccount.value = {
+    firstName: account.firstName,
+    lastName: account.surname,
+    email: account.email,
+    role: account.role,
+    username: account.username,
+    password: "**************", // Masked for history
+    isHistory: true, // Flag to hide "Send" button if needed
+  };
+  showPreviewModal.value = true;
+};
+
+onMounted(async () => {
+  // Initialize auth if needed
+  if (!authStore.isInitialized) {
+    await authStore.initializeAuth();
+  }
+
+  if (authStore.isAuthenticated && authStore.user) {
+    fetchCreatedAccounts();
+    fetchAccountCreationHistory();
+  }
 });
+
+const sendingCredentials = ref(false);
+
+const sendCredentials = async (retryCount = 0) => {
+  const maxRetries = 2;
+  const retryDelay = 1000; // 1 second
+
+  if (!isFormValid.value) {
+    notify("Please complete the form before sending credentials.", {
+      type: "warning",
+      duration: 3000,
+    });
+    return;
+  }
+
+  sendingCredentials.value = true;
+  try {
+    const username = generateUsername();
+
+    await api.post("/emails/send-account-creation", {
+      firstName: accountForm.value.firstName,
+      lastName: accountForm.value.lastName,
+      username: username,
+      email: accountForm.value.email,
+      role: accountForm.value.role,
+      password: generatedPassword.value, // Pass the generated password
+    });
+
+    notify("Credentials sent successfully!", {
+      type: "success",
+      duration: 3000,
+    });
+  } catch (error) {
+    console.error("Error sending credentials:", error);
+
+    // Check if error is retryable
+    const isRetryableError =
+      error.code === "NETWORK_ERROR" ||
+      error.code === "TIMEOUT" ||
+      error.response?.status >= 500 ||
+      error.message?.includes("network") ||
+      error.message?.includes("timeout");
+
+    if (isRetryableError && retryCount < maxRetries) {
+      notify(
+        `Connection issue. Retrying... (${retryCount + 1}/${maxRetries})`,
+        {
+          type: "warning",
+          duration: 2000,
+        },
+      );
+
+      // Wait before retrying
+      await new Promise((resolve) =>
+        setTimeout(resolve, retryDelay * (retryCount + 1)),
+      );
+      return sendCredentials(retryCount + 1);
+    }
+
+    // Provide user-friendly error messages
+    let errorMessage = "Failed to send credentials.";
+    if (error.response?.status === 400) {
+      errorMessage = "Invalid email data. Please check the account details.";
+    } else if (error.response?.status === 401) {
+      errorMessage = "Authentication failed. Please log in again.";
+    } else if (error.response?.status >= 500) {
+      errorMessage =
+        "Email service temporarily unavailable. Please try again later.";
+    } else if (error.message) {
+      errorMessage = `Failed to send credentials: ${error.message}`;
+    }
+
+    notify(errorMessage, {
+      type: "error",
+      duration: 5000,
+    });
+  } finally {
+    sendingCredentials.value = false;
+  }
+};
+
+const handleSuccessModalClose = () => {
+  showSuccessModal.value = false;
+  resetForm();
+  createdAccountForEmail.value = null;
+  credentialsSentFromModal.value = false;
+};
+
+const sendCredentialsFromModal = async () => {
+  if (!createdAccountForEmail.value) return;
+
+  sendingCredentialsFromModal.value = true;
+  try {
+    const account = createdAccountForEmail.value;
+    await api.post("/emails/send-account-creation", {
+      firstName: account.firstName,
+      lastName: account.lastName,
+      username: account.username,
+      email: account.email,
+      role: account.role,
+      password: account.password, // Include password from createdAccountForEmail
+      // isCustomPassword: false,
+    });
+
+    notify("Credentials sent successfully!", {
+      type: "success",
+      duration: 3000,
+    });
+    credentialsSentFromModal.value = true;
+  } catch (error) {
+    console.error("Error sending credentials:", error);
+    notify("Failed to send credentials. Please try again.", {
+      type: "error",
+      duration: 3000,
+    });
+  } finally {
+    sendingCredentialsFromModal.value = false;
+  }
+};
+
+const createAccount = async (retryCount = 0) => {
+  const maxRetries = 3;
+  const retryDelay = 1000; // 1 second
+
+  formErrors.value = {};
+  if (!isFormValid.value) {
+    notify("Please complete the form before creating an account.", {
+      type: "warning",
+      duration: 3000,
+    });
+    return;
+  }
+
+  creatingAccount.value = true;
+  try {
+    const username = generateUsername();
+    const payload = {
+      username: username,
+      email: accountForm.value.email,
+      role: accountForm.value.role,
+      password: generatedPassword.value, // Include generated password
+      firstName: accountForm.value.firstName,
+      lastName: accountForm.value.lastName,
+      suffix: accountForm.value.suffix,
+      gender: accountForm.value.gender,
+      contactNumber: accountForm.value.contactNumber,
+      address: accountForm.value.address,
+      emergencyContactNumber: accountForm.value.emergencyContactNumber,
+      birthdate: accountForm.value.birthdate, // Include birthdate
+    };
+
+    if (accountForm.value.role === "Staff") {
+      // Note: Department and Specialty fields not supported in current schema
+    }
+
+    const response = await api.post("/admin/accounts", payload);
+
+    if (response.data?.error) {
+      throw new Error(response.data.error);
+    }
+
+    notify("Account created successfully!", {
+      type: "success",
+      duration: 3000,
+    });
+    createdAccountForEmail.value = response.data?.user || response.data;
+    showSuccessModal.value = true;
+    resetForm();
+    fetchCreatedAccounts(); // Refresh the list of created accounts
+  } catch (error) {
+    console.error("Error creating account:", error);
+
+    // Check if error is retryable (network errors, temporary server issues)
+    const isRetryableError =
+      error.code === "NETWORK_ERROR" ||
+      error.code === "TIMEOUT" ||
+      error.response?.status >= 500 ||
+      error.message?.includes("network") ||
+      error.message?.includes("timeout");
+
+    if (isRetryableError && retryCount < maxRetries) {
+      notify(
+        `Connection issue. Retrying... (${retryCount + 1}/${maxRetries})`,
+        {
+          type: "warning",
+          duration: 2000,
+        },
+      );
+
+      // Wait before retrying
+      await new Promise((resolve) =>
+        setTimeout(resolve, retryDelay * (retryCount + 1)),
+      );
+      return createAccount(retryCount + 1);
+    }
+
+    // Provide user-friendly error messages
+    let errorMessage = "Failed to create account.";
+    if (error.response?.status === 400) {
+      errorMessage = "Invalid data provided. Please check your inputs.";
+    } else if (error.response?.status === 401) {
+      errorMessage = "Authentication failed. Please log in again.";
+    } else if (error.response?.status === 403) {
+      errorMessage = "You don't have permission to create accounts.";
+    } else if (error.response?.status === 409) {
+      errorMessage = "An account with this email already exists.";
+    } else if (error.response?.status >= 500) {
+      errorMessage = "Server error. Please try again later.";
+    } else if (error.message) {
+      errorMessage = `Failed to create account: ${error.message}`;
+    }
+
+    notify(errorMessage, {
+      type: "error",
+      duration: 5000,
+    });
+  } finally {
+    creatingAccount.value = false;
+  }
+};
+
+const navigateToDashboard = () => {
+  router.push("/admin/dashboard");
+};
+
+const closeModals = () => {
+  showPreviewModal.value = false;
+  selectedAccount.value = null;
+};
+
+const resetForm = () => {
+  accountForm.value = {
+    username: "",
+    email: "",
+    role: "Staff",
+    firstName: "",
+    lastName: "",
+    suffix: "",
+    gender: "",
+    contactNumber: "",
+    address: "",
+    emergencyContactNumber: "",
+    birthdate: null,
+    // Note: generatedPassword is a computed property, so we reset birthdate instead
+  };
+  formErrors.value = {};
+};
 </script>
 
 <template>
@@ -236,30 +624,8 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Tab Navigation -->
-    <ul class="nav nav-tabs mb-4 animate-fade-in-up" role="tablist">
-      <li class="nav-item" role="presentation">
-        <button
-          class="nav-link"
-          :class="{ active: activeTab === 'create' }"
-          @click="activeTab = 'create'"
-        >
-          <i class="bi bi-person-plus me-2"></i>Create Account
-        </button>
-      </li>
-      <li class="nav-item" role="presentation">
-        <button
-          class="nav-link"
-          :class="{ active: activeTab === 'history' }"
-          @click="activeTab = 'history'"
-        >
-          <i class="bi bi-clock-history me-2"></i>Creation History
-        </button>
-      </li>
-    </ul>
-
-    <!-- Create Account Tab -->
-    <div v-if="activeTab === 'create'" class="animate-fade-in-up">
+    <!-- Main Form -->
+    <div class="animate-fade-in-up">
       <div class="row">
         <!-- Account Creation Form -->
         <div class="col-lg-8">
@@ -271,49 +637,20 @@ onMounted(() => {
               </h5>
             </div>
             <div class="card-body">
-              <form @submit.prevent="previewCredentials">
-                <!-- Account Type Selection -->
+              <form @submit.prevent="createAccount">
+                <!-- Role Selection -->
                 <div class="row g-3">
                   <div class="col-md-12">
-                    <label class="form-label">Account Type *</label>
-                    <div class="row g-2">
-                      <div class="col-md-6">
-                        <div class="form-check">
-                          <input
-                            v-model="accountForm.accountType"
-                            class="form-check-input"
-                            type="radio"
-                            value="patient"
-                            id="accountTypePatient"
-                          />
-                          <label
-                            class="form-check-label"
-                            for="accountTypePatient"
-                          >
-                            <i class="bi bi-person me-2"></i>
-                            Patient Account
-                          </label>
-                        </div>
-                      </div>
-                      <div class="col-md-6">
-                        <div class="form-check">
-                          <input
-                            v-model="accountForm.accountType"
-                            class="form-check-input"
-                            type="radio"
-                            value="staff"
-                            id="accountTypeStaff"
-                          />
-                          <label
-                            class="form-check-label"
-                            for="accountTypeStaff"
-                          >
-                            <i class="bi bi-person-badge me-2"></i>
-                            Staff Account
-                          </label>
-                        </div>
-                      </div>
-                    </div>
+                    <label class="form-label">Role *</label>
+                    <select
+                      v-model="accountForm.role"
+                      class="form-select"
+                      required
+                    >
+                      <option value="Patient">Patient</option>
+                      <option value="Nurse">Nurse</option>
+                      <option value="Admin">Admin</option>
+                    </select>
                   </div>
 
                   <!-- Basic Information -->
@@ -323,17 +660,25 @@ onMounted(() => {
                       v-model="accountForm.firstName"
                       type="text"
                       class="form-control"
+                      :class="{ 'is-invalid': formErrors.firstName }"
                       required
                     />
+                    <div v-if="formErrors.firstName" class="invalid-feedback">
+                      {{ formErrors.firstName }}
+                    </div>
                   </div>
                   <div class="col-md-4">
-                    <label class="form-label">Surname *</label>
+                    <label class="form-label">Last Name *</label>
                     <input
-                      v-model="accountForm.surname"
+                      v-model="accountForm.lastName"
                       type="text"
                       class="form-control"
+                      :class="{ 'is-invalid': formErrors.lastName }"
                       required
                     />
+                    <div v-if="formErrors.lastName" class="invalid-feedback">
+                      {{ formErrors.lastName }}
+                    </div>
                   </div>
                   <div class="col-md-4">
                     <label class="form-label">Suffix</label>
@@ -341,101 +686,76 @@ onMounted(() => {
                       v-model="accountForm.suffix"
                       type="text"
                       class="form-control"
-                      placeholder="Jr., Sr., MD, RN, etc."
+                      placeholder="e.g., Jr., Sr., III"
                     />
                   </div>
 
-                  <!-- Patient-specific fields -->
-                  <div
-                    v-if="accountForm.accountType === 'patient'"
-                    class="col-md-6"
-                  >
-                    <label class="form-label">Birth Date *</label>
-                    <input
-                      v-model="accountForm.birthDate"
-                      type="date"
-                      class="form-control"
-                      required
-                    />
-                  </div>
-                  <div
-                    v-if="accountForm.accountType === 'patient'"
-                    class="col-md-6"
-                  >
-                    <label class="form-label">Gender *</label>
-                    <select
-                      v-model="accountForm.gender"
-                      class="form-select"
-                      required
-                    >
+                  <!-- Additional Fields -->
+                  <div class="col-md-6">
+                    <label class="form-label">Gender</label>
+                    <select v-model="accountForm.gender" class="form-select">
+                      <option value="">Select Gender</option>
                       <option value="Male">Male</option>
                       <option value="Female">Female</option>
                       <option value="Other">Other</option>
                     </select>
                   </div>
-
-                  <!-- Staff-specific fields -->
-                  <div
-                    v-if="accountForm.accountType === 'staff'"
-                    class="col-md-12"
-                  >
-                    <label class="form-label">Role *</label>
-                    <select
-                      v-model="accountForm.role"
-                      class="form-select"
-                      required
-                    >
-                      <option value="Nurse">Nurse</option>
-                      <option value="Barangay Health Worker">
-                        Barangay Health Worker
-                      </option>
-                      <option value="Admin">Admin</option>
-                    </select>
-                  </div>
-
-                  <!-- Contact Information -->
-                  <div class="col-md-6 mb-3">
-                    <label class="form-label">Contact Number *</label>
+                  <div class="col-md-6">
+                    <label class="form-label">Contact Number</label>
                     <input
                       v-model="accountForm.contactNumber"
                       type="tel"
                       class="form-control"
-                      required
+                      placeholder="e.g., +1-234-567-8900"
                     />
                   </div>
-                  <div class="col-md-6 mb-3">
+                  <div class="col-md-6">
+                    <label class="form-label">Address</label>
+                    <input
+                      v-model="accountForm.address"
+                      type="text"
+                      class="form-control"
+                      placeholder="Street address, city, state, zip"
+                    />
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label">Emergency Contact Number</label>
+                    <input
+                      v-model="accountForm.emergencyContactNumber"
+                      type="tel"
+                      class="form-control"
+                      placeholder="Emergency contact phone number"
+                    />
+                  </div>
+
+                  <!-- Birthdate Field -->
+                  <div class="col-md-6">
+                    <label class="form-label">Birthdate *</label>
+                    <VueDatePicker
+                      v-model="accountForm.birthdate"
+                      :enable-time-picker="false"
+                      format="MM-dd-yyyy"
+                      :class="{ 'is-invalid': formErrors.birthdate }"
+                      placeholder="MM-DD-YYYY"
+                    ></VueDatePicker>
+                    <div v-if="formErrors.birthdate" class="invalid-feedback">
+                      {{ formErrors.birthdate }}
+                    </div>
+                  </div>
+
+                  <!-- Email Address -->
+                  <div class="col-md-7 mb-3">
                     <label class="form-label">Email Address *</label>
                     <input
                       v-model="accountForm.email"
                       type="email"
                       class="form-control"
+                      :class="{ 'is-invalid': formErrors.email }"
                       required
                     />
-                  </div>
-
-                  <div
-                    v-if="accountForm.accountType === 'patient'"
-                    class="col-md-12 mb-3"
-                  >
-                    <label class="form-label">Address *</label>
-                    <textarea
-                      v-model="accountForm.address"
-                      class="form-control"
-                      rows="2"
-                      required
-                    ></textarea>
-                  </div>
-                  <div
-                    v-if="accountForm.accountType === 'patient'"
-                    class="col-md-12 mb-4"
-                  >
-                    <label class="form-label">Emergency Contact</label>
-                    <input
-                      v-model="accountForm.emergencyContact"
-                      type="text"
-                      class="form-control"
-                      placeholder="Name - Contact Number"
-                    />
+                    <div v-if="formErrors.email" class="invalid-feedback">
+                      {{ formErrors.email }}
+                    </div>
                   </div>
                 </div>
 
@@ -444,10 +764,19 @@ onMounted(() => {
                   <button
                     type="submit"
                     class="btn btn-primary btn-lg"
-                    :disabled="!accountForm.firstName || !accountForm.surname"
+                    :disabled="!isFormValid || creatingAccount"
                   >
-                    <i class="bi bi-key me-2"></i>
-                    Generate Credentials & Preview
+                    <i
+                      class="bi me-2"
+                      :class="
+                        creatingAccount
+                          ? 'bi-hourglass-split'
+                          : 'bi-person-plus'
+                      "
+                    ></i>
+                    {{
+                      creatingAccount ? "Creating Account..." : "Create Account"
+                    }}
                   </button>
                 </div>
               </form>
@@ -465,22 +794,18 @@ onMounted(() => {
               </h5>
             </div>
             <div class="card-body">
-              <div v-if="!generatedCredentials" class="text-center py-4">
-                <i class="bi bi-key text-muted fs-1 mb-3"></i>
-                <p class="text-muted">
-                  Fill in the form to generate credentials
-                </p>
+              <div v-if="!isFormValid" class="text-center py-4">
+                <i class="bi bi-person-plus text-muted fs-1 mb-3"></i>
+                <p class="text-muted">Complete the form to create an account</p>
               </div>
 
               <div v-else class="credentials-preview">
                 <div class="alert alert-info">
                   <h6 class="alert-heading">
                     <i class="bi bi-info-circle me-2"></i>
-                    Auto-Generated Credentials
+                    Account Preview
                   </h6>
-                  <p class="mb-2">
-                    The following credentials will be sent to the user:
-                  </p>
+                  <p class="mb-2">The following account will be created:</p>
                 </div>
 
                 <div class="credential-item mb-3">
@@ -489,13 +814,13 @@ onMounted(() => {
                     <input
                       type="text"
                       class="form-control"
-                      :value="generatedCredentials.username"
+                      :value="generateUsername()"
                       readonly
                     />
                     <button
                       class="btn btn-outline-secondary"
                       type="button"
-                      @click="copyToClipboard(generatedCredentials.username)"
+                      @click="copyToClipboard(generateUsername())"
                     >
                       <i class="bi bi-clipboard"></i>
                     </button>
@@ -504,19 +829,38 @@ onMounted(() => {
 
                 <div class="credential-item mb-3">
                   <label class="form-label small text-muted"
-                    >TEMPORARY PASSWORD</label
+                    >EMAIL ADDRESS</label
                   >
                   <div class="input-group">
                     <input
-                      type="text"
+                      type="email"
                       class="form-control"
-                      :value="generatedCredentials.password"
+                      :value="accountForm.email"
                       readonly
                     />
                     <button
                       class="btn btn-outline-secondary"
                       type="button"
-                      @click="copyToClipboard(generatedCredentials.password)"
+                      @click="copyToClipboard(accountForm.email)"
+                    >
+                      <i class="bi bi-clipboard"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="credential-item mb-3">
+                  <label class="form-label small text-muted">PASSWORD</label>
+                  <div class="input-group">
+                    <input
+                      type="text"
+                      class="form-control"
+                      :value="generatedPassword"
+                      readonly
+                    />
+                    <button
+                      class="btn btn-outline-secondary"
+                      type="button"
+                      @click="copyToClipboard(generatedPassword)"
                     >
                       <i class="bi bi-clipboard"></i>
                     </button>
@@ -524,40 +868,33 @@ onMounted(() => {
                 </div>
 
                 <div class="credential-item mb-4">
-                  <label class="form-label small text-muted"
-                    >EMAIL ADDRESS</label
-                  >
+                  <label class="form-label small text-muted">FULL NAME</label>
                   <div class="input-group">
                     <input
-                      type="email"
+                      type="text"
                       class="form-control"
-                      :value="generatedCredentials.email"
+                      :value="`${accountForm.firstName} ${accountForm.lastName}`"
                       readonly
                     />
-                    <button
-                      class="btn btn-outline-secondary"
-                      type="button"
-                      @click="copyToClipboard(generatedCredentials.email)"
-                    >
-                      <i class="bi bi-clipboard"></i>
-                    </button>
                   </div>
                 </div>
 
                 <div class="d-grid gap-2">
                   <button
                     class="btn btn-success"
-                    @click="sendCredentials"
-                    :disabled="sendingCredentials"
+                    @click="createAccount"
+                    :disabled="creatingAccount"
                   >
                     <i
-                      class="bi bi-send me-2"
-                      :class="{ 'animate-spin': sendingCredentials }"
+                      class="bi me-2"
+                      :class="
+                        creatingAccount
+                          ? 'bi-hourglass-split'
+                          : 'bi-person-plus'
+                      "
                     ></i>
                     {{
-                      sendingCredentials
-                        ? "Sending Credentials..."
-                        : "Create Account & Send Credentials"
+                      creatingAccount ? "Creating Account..." : "Create Account"
                     }}
                   </button>
                   <button
@@ -565,14 +902,15 @@ onMounted(() => {
                     @click="previewCredentials"
                   >
                     <i class="bi bi-eye me-2"></i>
-                    Preview Email/SMS
+                    Preview Details
                   </button>
                 </div>
 
                 <div class="mt-3">
                   <small class="text-muted">
                     <i class="bi bi-info-circle me-1"></i>
-                    Credentials will be sent via Gmail and SMS automatically
+                    Account will be created with the provided password securely
+                    hashed with bcrypt.
                   </small>
                 </div>
               </div>
@@ -583,7 +921,7 @@ onMounted(() => {
     </div>
 
     <!-- Creation History Tab -->
-    <div v-else-if="activeTab === 'history'" class="animate-fade-in-up">
+    <div class="animate-fade-in-up">
       <div class="card">
         <div
           class="card-header d-flex justify-content-between align-items-center"
@@ -593,13 +931,16 @@ onMounted(() => {
             Account Creation History
           </h5>
           <div class="d-flex gap-2">
-            <button class="btn btn-sm btn-outline-primary">
+            <button
+              class="btn btn-sm btn-outline-primary"
+              @click="exportHistory"
+            >
               <i class="bi bi-download me-1"></i>
               Export History
             </button>
             <button
               class="btn btn-sm btn-outline-secondary"
-              @click="$refs.accountHistoryTable?.refresh()"
+              @click="fetchAccountCreationHistory"
             >
               <i class="bi bi-arrow-clockwise me-1"></i>
               Refresh
@@ -607,110 +948,122 @@ onMounted(() => {
           </div>
         </div>
         <div class="card-body p-0">
-          <div class="table-responsive">
-            <table class="table table-hover mb-0">
-              <thead class="table-light">
-                <tr>
-                  <th>Account Holder</th>
-                  <th>Type</th>
-                  <th>Username</th>
-                  <th>Status</th>
-                  <th>Created</th>
-                  <th>Credentials Sent</th>
-                  <th>Last Login</th>
-                  <th class="text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="account in createdAccounts" :key="account.id">
-                  <td>
-                    <div class="d-flex align-items-center">
-                      <div class="account-avatar me-3">
-                        <i class="bi bi-person-circle"></i>
-                      </div>
-                      <div>
-                        <div class="fw-medium">{{ account.name }}</div>
-                        <small class="text-muted">{{ account.email }}</small>
-                      </div>
-                    </div>
-                  </td>
-                  <td>
-                    <span
-                      class="badge"
-                      :class="`bg-${getTypeBadgeVariant(account.type)}`"
-                    >
-                      {{ account.role }}
-                    </span>
-                  </td>
-                  <td>
-                    <code class="bg-light px-2 py-1 rounded">{{
-                      account.username
-                    }}</code>
-                  </td>
-                  <td>
-                    <span
-                      class="badge"
-                      :class="`bg-${getStatusBadgeVariant(account.status)}`"
-                    >
-                      {{ account.status }}
-                    </span>
-                  </td>
-                  <td>{{ formatDateTime(account.createdAt) }}</td>
-                  <td>
-                    <i
-                      v-if="account.credentialsSent"
-                      class="bi bi-check-circle text-success"
-                    ></i>
-                    <i v-else class="bi bi-x-circle text-danger"></i>
-                    <small class="ms-1">
-                      {{ account.credentialsSent ? "Sent" : "Failed" }}
-                    </small>
-                  </td>
-                  <td>
-                    <small v-if="account.lastLogin">{{
-                      formatDateTime(account.lastLogin)
-                    }}</small>
-                    <small v-else class="text-muted">Never</small>
-                  </td>
-                  <td class="text-center">
-                    <div class="btn-group" role="group">
-                      <button
-                        class="btn btn-sm btn-outline-info"
-                        title="View Details"
-                      >
-                        <i class="bi bi-eye"></i>
-                      </button>
-                      <button
-                        class="btn btn-sm btn-outline-primary"
-                        title="Resend Credentials"
-                      >
-                        <i class="bi bi-send"></i>
-                      </button>
-                      <button
-                        class="btn btn-sm btn-outline-danger"
-                        title="Delete Account"
-                      >
-                        <i class="bi bi-trash"></i>
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <div v-if="loadingHistory" class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+              <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading accounts...</p>
           </div>
+          <template v-else>
+            <div class="table-responsive">
+              <table class="table table-hover mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th>Account Holder</th>
+                    <th>Type</th>
+                    <th>Username</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Credentials Sent</th>
+                    <th>Last Login</th>
+                    <th class="text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="account in accountHistory" :key="account.id">
+                    <td>
+                      <div class="d-flex align-items-center">
+                        <div class="account-avatar me-3">
+                          <i class="bi bi-person-circle"></i>
+                        </div>
+                        <div>
+                          <div class="fw-medium">{{ account.name }}</div>
+                          <small class="text-muted">{{ account.email }}</small>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <span
+                        class="badge"
+                        :class="`bg-${getTypeBadgeVariant(account.type)}`"
+                      >
+                        {{ account.role }}
+                      </span>
+                    </td>
+                    <td>
+                      <code class="bg-light px-2 py-1 rounded">{{
+                        account.username
+                      }}</code>
+                    </td>
+                    <td>
+                      <span
+                        class="badge"
+                        :class="`bg-${getStatusBadgeVariant(account.status)}`"
+                      >
+                        {{ account.status }}
+                      </span>
+                    </td>
+                    <td>{{ formatDateTime(account.createdAt) }}</td>
+                    <td>
+                      <i
+                        v-if="account.credentialsSent"
+                        class="bi bi-check-circle text-success"
+                      ></i>
+                      <i v-else class="bi bi-x-circle text-danger"></i>
+                      <small class="ms-1">
+                        {{ account.credentialsSent ? "Sent" : "Failed" }}
+                      </small>
+                    </td>
+                    <td>
+                      <small v-if="account.lastLogin">{{
+                        formatDateTime(account.lastLogin)
+                      }}</small>
+                      <small v-else class="text-muted">Never</small>
+                    </td>
+                    <td class="text-center">
+                      <div class="btn-group" role="group">
+                        <button
+                          class="btn btn-sm btn-outline-info"
+                          title="View Details"
+                          @click="openPreviewModal(account)"
+                        >
+                          <i class="bi bi-eye"></i>
+                        </button>
+                        <button
+                          class="btn btn-sm btn-outline-primary"
+                          title="Resend Credentials"
+                        >
+                          <i class="bi bi-send"></i>
+                        </button>
+                        <button
+                          class="btn btn-sm btn-outline-danger"
+                          title="Delete Account"
+                        >
+                          <i class="bi bi-trash"></i>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
 
-          <!-- Empty State -->
-          <div v-if="createdAccounts.length === 0" class="text-center py-5">
-            <i class="bi bi-person-plus text-muted fs-1 mb-3"></i>
-            <h5 class="text-muted">No accounts created yet</h5>
-            <p class="text-muted mb-3">
-              Create your first user account to get started.
-            </p>
-            <button class="btn btn-primary" @click="activeTab = 'create'">
-              <i class="bi bi-person-plus me-2"></i>
-              Create First Account
-            </button>
-          </div>
+            <!-- Empty State -->
+            <div
+              v-if="!loadingHistory && accountHistory.length === 0"
+              class="text-center py-5"
+            >
+              <i class="bi bi-person-plus text-muted fs-1 mb-3"></i>
+              <h5 class="text-muted">No accounts created yet</h5>
+              <p class="text-muted mb-3">
+                Create your first user account to get started.
+              </p>
+              <button class="btn btn-primary" @click="activeTab = 'create'">
+                <i class="bi bi-person-plus me-2"></i>
+                Create First Account
+              </button>
+            </div>
+          </template>
         </div>
       </div>
     </div>
@@ -735,70 +1088,84 @@ onMounted(() => {
             ></button>
           </div>
           <div class="modal-body">
-            <div v-if="generatedCredentials">
-              <!-- Email Preview -->
+            <div v-if="selectedAccount">
+              <!-- Account Preview -->
               <div class="mb-4">
                 <h6 class="fw-medium">
+                  <i class="bi bi-person-circle me-2"></i>
+                  Account Details Preview
+                </h6>
+                <div class="account-preview border rounded p-3 bg-light">
+                  <div class="account-summary mb-3">
+                    <h5 class="text-primary mb-2">
+                      {{ selectedAccount.firstName }}
+                      {{ selectedAccount.lastName }}
+                    </h5>
+                    <p class="mb-2">
+                      <strong>Email:</strong> {{ selectedAccount.email }}
+                    </p>
+                    <p class="mb-2">
+                      <strong>Role:</strong> {{ selectedAccount.role }}
+                    </p>
+                    <p class="mb-2">
+                      <strong>Username:</strong> {{ selectedAccount.username }}
+                    </p>
+                  </div>
+
+                  <div
+                    v-if="selectedAccount.role === 'Patient'"
+                    class="patient-details"
+                  >
+                    <h6 class="fw-medium">Patient Information:</h6>
+                  </div>
+
+                  <div v-else class="staff-details">
+                    <h6 class="fw-medium">Staff Information:</h6>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Email Preview -->
+              <div>
+                <h6 class="fw-medium">
                   <i class="bi bi-envelope me-2"></i>
-                  Gmail Preview
+                  Confirmation Email Preview
                 </h6>
                 <div class="email-preview border rounded p-3 bg-light">
                   <div class="email-header mb-3">
-                    <strong>Subject:</strong> Your Baan KM-3 Health Center
-                    Account Credentials
+                    <strong>Subject:</strong> Welcome to Baan KM-3 Health Center
                   </div>
                   <div class="email-body">
                     <p>
                       Hello
                       <strong
-                        >{{ accountForm.firstName }}
-                        {{ accountForm.surname }}</strong
+                        >{{ selectedAccount.firstName }}
+                        {{ selectedAccount.lastName }}</strong
                       >,
                     </p>
                     <p>
-                      Your account has been created successfully. Here are your
-                      login credentials:
+                      Your account has been successfully created! Here are your
+                      login details:
                     </p>
                     <div class="credentials-box p-3 bg-white rounded mb-3">
                       <p>
                         <strong>Username:</strong>
-                        {{ generatedCredentials.username }}
+                        {{ selectedAccount.username }}
                       </p>
-                      <p>
-                        <strong>Temporary Password:</strong>
-                        {{ generatedCredentials.password }}
-                      </p>
+                      <p><strong>Email:</strong> {{ selectedAccount.email }}</p>
+                      <p><strong>Role:</strong> {{ selectedAccount.role }}</p>
+                      <!-- <p>
+                        <strong>Password:</strong> {{ selectedAccount.password }}
+                      </p> -->
                     </div>
-                    <p>Please change your password upon first login.</p>
+                    <p>
+                      You can now log in to the system using your email and the
+                      password provided above.
+                    </p>
                     <p>
                       Best regards,<br />Baan KM-3 Health Center Information
                       System
                     </p>
-                  </div>
-                </div>
-              </div>
-
-              <!-- SMS Preview -->
-              <div>
-                <h6 class="fw-medium">
-                  <i class="bi bi-phone me-2"></i>
-                  SMS Preview
-                </h6>
-                <div class="sms-preview border rounded p-3 bg-light">
-                  <div class="sms-body">
-                    <p>
-                      Hello {{ accountForm.firstName }}, your Baan KM-3 Clinic
-                      account is active.
-                    </p>
-                    <p>
-                      <strong>Username:</strong>
-                      {{ generatedCredentials.username }}
-                    </p>
-                    <p>
-                      <strong>Password:</strong>
-                      {{ generatedCredentials.password }}
-                    </p>
-                    <p>Check your email for full details.</p>
                   </div>
                 </div>
               </div>
@@ -813,13 +1180,16 @@ onMounted(() => {
               Close
             </button>
             <button
+              v-if="!selectedAccount?.isHistory"
               type="button"
               class="btn btn-primary"
-              @click="sendCredentials"
-              :disabled="sendingCredentials"
+              @click="sendCredentialsFromModal"
+              :disabled="sendingCredentialsFromModal"
             >
               <i class="bi bi-send me-2"></i>
-              {{ sendingCredentials ? "Sending..." : "Send Credentials" }}
+              {{
+                sendingCredentialsFromModal ? "Sending..." : "Send Credentials"
+              }}
             </button>
           </div>
         </div>
@@ -832,10 +1202,75 @@ onMounted(() => {
       class="modal-backdrop fade show"
       @click="closeModals"
     ></div>
+
+    <!-- Success Modal -->
+    <div
+      v-if="showSuccessModal"
+      class="modal fade show"
+      style="display: block"
+      tabindex="-1"
+      role="dialog"
+      aria-labelledby="successModalLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-body p-0">
+            <div class="card border-0">
+              <div class="card-body text-center p-4">
+                <i class="bi bi-check-circle-fill text-success fs-1 mb-3"></i>
+                <p class="card-text fs-5 fw-bold mb-4">
+                  Account registered successfully
+                </p>
+                <button
+                  type="button"
+                  class="btn btn-primary me-2"
+                  @click="handleSuccessModalClose"
+                >
+                  OK
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-outline-primary"
+                  @click="navigateToDashboard"
+                >
+                  Go to Dashboard
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Success Modal Backdrop -->
+    <div
+      v-if="showSuccessModal"
+      class="modal-backdrop fade show"
+      @click="handleSuccessModalClose"
+    ></div>
   </div>
 </template>
 
 <style scoped>
+/* Success modal fade-in animation */
+.modal.fade .modal-dialog {
+  transition: transform 0.3s ease-out;
+  transform: translate(0, -50px);
+}
+
+.modal.show .modal-dialog {
+  transform: translate(0, 0);
+}
+
+/* Center the success modal */
+.modal-dialog-centered .modal-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
+}
 .account-avatar {
   width: 40px;
   height: 40px;

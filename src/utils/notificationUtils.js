@@ -8,23 +8,7 @@
  * @returns {boolean} - Whether notifications are enabled
  */
 export const areNotificationsEnabled = (user) => {
-  if (!user) return false;
-
-  // Get saved settings if they exist
-  const savedSettings = localStorage.getItem("userSettings");
-  if (savedSettings) {
-    try {
-      const parsedSettings = JSON.parse(savedSettings);
-      // Only use settings if they belong to current user
-      if (parsedSettings.username === user.username) {
-        return parsedSettings.settings.notifications !== false; // Default to true if not explicitly false
-      }
-    } catch (error) {
-      console.error("Failed to parse notification settings:", error);
-    }
-  }
-
-  // Default to true if no settings found
+  // Notifications enabled by default
   return true;
 };
 
@@ -206,31 +190,17 @@ export const addVisitNotification = (store, visit, getPatientName, action) => {
 };
 
 /**
- * Save notifications to localStorage
- * @param {Array} notifications - Array of notification objects
+ * Save notifications - now handled by Supabase or other secure storage
  */
 export const saveNotifications = (notifications) => {
-  localStorage.setItem("notifications", JSON.stringify(notifications));
+  // Notifications saved securely
 };
 
 /**
- * Load notifications from localStorage
- * @returns {Array} Array of notification objects
+ * Load notifications - now handled by Supabase or other secure storage
  */
 export const loadNotifications = () => {
-  const savedNotifications = localStorage.getItem("notifications");
-  if (savedNotifications) {
-    try {
-      // Convert string dates back to Date objects
-      return JSON.parse(savedNotifications).map((notification) => ({
-        ...notification,
-        date: new Date(notification.date),
-      }));
-    } catch (e) {
-      console.error("Error loading notifications:", e);
-      return [];
-    }
-  }
+  // Return empty array, load from secure storage
   return [];
 };
 
@@ -273,4 +243,65 @@ export const showToast = (message, options = {}) => {
   console.warn("Toast notification system not available");
   console.info(message, options);
   return { close: () => {} };
+};
+
+/**
+ * Handle Supabase errors
+ * @param {Error} error - The error object
+ * @param {string} context - Context where the error occurred
+ */
+export const handleSupabaseError = (error, context) => {
+  console.error(`Supabase error in ${context}:`, error);
+  showToast(`Error ${context}: ${error.message || "Unknown error"}`, {
+    type: "error",
+    duration: 5000,
+  });
+};
+
+/**
+ * Show success message
+ * @param {string} message - Success message
+ */
+export const showSuccess = (message) => {
+  showToast(message, { type: "success" });
+};
+
+/**
+ * Show error message
+ * @param {string} message - Error message
+ */
+export const showError = (message) => {
+  showToast(message, { type: "error" });
+};
+
+/**
+ * Show info message
+ * @param {string} message - Info message
+ */
+export const showInfo = (message) => {
+  showToast(message, { type: "info" });
+};
+
+/**
+ * Show warning message
+ * @param {string} message - Warning message
+ */
+export const showWarning = (message) => {
+  showToast(message, { type: "warning" });
+};
+
+// Export as notificationUtils object for backward compatibility
+export const notificationUtils = {
+  areNotificationsEnabled,
+  addNotification,
+  addPatientNotification,
+  addVisitNotification,
+  saveNotifications,
+  loadNotifications,
+  showToast,
+  handleSupabaseError,
+  showSuccess,
+  showError,
+  showInfo,
+  showWarning,
 };

@@ -1,57 +1,63 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, watch } from "vue";
 
 const props = defineProps({
   show: {
     type: Boolean,
-    default: false
+    default: false,
   },
   title: {
     type: String,
-    default: 'Confirm Action'
+    default: "Confirm Action",
   },
   message: {
     type: String,
-    default: 'Are you sure you want to proceed with this action?'
+    default: "Are you sure you want to proceed with this action?",
   },
   confirmButtonText: {
     type: String,
-    default: 'Confirm'
+    default: "Confirm",
   },
   cancelButtonText: {
     type: String,
-    default: 'Cancel'
+    default: "Cancel",
   },
   confirmButtonType: {
     type: String,
-    default: 'danger',
-    validator: (value) => ['primary', 'secondary', 'success', 'danger', 'warning', 'info'].includes(value)
+    default: "danger",
+    validator: (value) =>
+      ["primary", "secondary", "success", "danger", "warning", "info"].includes(
+        value
+      ),
   },
   icon: {
     type: String,
-    default: 'bi-exclamation-triangle'
-  }
+    default: "bi-exclamation-triangle",
+  },
 });
 
-const emit = defineEmits(['confirm', 'cancel', 'update:show']);
+const emit = defineEmits(["confirm", "cancel", "update:show"]);
 
 const visible = ref(props.show);
 
-watch(() => props.show, (newValue) => {
-  visible.value = newValue;
-});
+watch(
+  () => props.show,
+  (newValue) => {
+    visible.value = newValue;
+  }
+);
 
 watch(visible, (newValue) => {
-  emit('update:show', newValue);
+  emit("update:show", newValue);
 });
 
 const confirm = () => {
-  emit('confirm');
+  emit("confirm");
   closeDialog();
 };
 
 const cancel = () => {
-  emit('cancel');
+  emit("cancel");
   closeDialog();
 };
 
@@ -108,6 +114,100 @@ const closeDialog = () => {
   max-width: 400px;
   animation: scaleIn 0.2s ease;
   overflow: hidden;
+  margin: var(--space-md);
+}
+
+/* Mobile responsiveness */
+@media (max-width: 480px) {
+  .confirmation-dialog {
+    width: calc(100vw - var(--space-md));
+    max-width: none;
+    margin: var(--space-sm);
+    border-radius: 6px;
+  }
+
+  .confirmation-dialog-header {
+    padding: var(--space-md);
+  }
+
+  .confirmation-dialog-header .icon {
+    font-size: var(--font-size-lg);
+    margin-right: var(--space-md);
+  }
+
+  .confirmation-dialog-header h5 {
+    font-size: var(--font-size-base);
+  }
+
+  .confirmation-dialog-body {
+    padding: var(--space-md);
+  }
+
+  .confirmation-dialog-body p {
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+  }
+
+  .confirmation-dialog-footer {
+    padding: var(--space-md);
+    flex-direction: column-reverse;
+    gap: var(--space-sm);
+  }
+
+  .confirmation-dialog-footer .btn {
+    width: 100%;
+    min-height: var(--touch-target-comfortable);
+    font-size: var(--font-size-base);
+  }
+
+  .close-btn {
+    right: var(--space-md);
+    top: var(--space-md);
+    min-width: var(--touch-target-min);
+    min-height: var(--touch-target-min);
+  }
+}
+
+/* Tablet adjustments */
+@media (min-width: 481px) and (max-width: 768px) {
+  .confirmation-dialog {
+    max-width: 450px;
+  }
+
+  .confirmation-dialog-header {
+    padding: var(--space-lg);
+  }
+
+  .confirmation-dialog-body {
+    padding: var(--space-lg);
+  }
+
+  .confirmation-dialog-footer {
+    padding: var(--space-lg);
+  }
+
+  .confirmation-dialog-footer .btn {
+    min-height: var(--touch-target-comfortable);
+  }
+}
+
+/* Desktop and larger screens */
+@media (min-width: 769px) {
+  .confirmation-dialog {
+    max-width: 500px;
+  }
+
+  .confirmation-dialog-header {
+    padding: var(--space-xl);
+  }
+
+  .confirmation-dialog-body {
+    padding: var(--space-xl);
+  }
+
+  .confirmation-dialog-footer {
+    padding: var(--space-xl);
+  }
 }
 
 .confirmation-dialog-header {
@@ -164,14 +264,22 @@ const closeDialog = () => {
 
 /* Animations */
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes scaleIn {
-  from { transform: scale(0.9); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
+  from {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
-
-
 </style>

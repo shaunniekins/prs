@@ -2,23 +2,19 @@
 const props = defineProps({
   show: {
     type: Boolean,
-    default: false
-  }
+    default: false,
+  },
 });
 
-const emit = defineEmits(['close']);
+const emit = defineEmits(["close"]);
 
 const closeBackdrop = () => {
-  emit('close');
+  emit("close");
 };
 </script>
 
 <template>
-  <div
-    v-if="show"
-    class="sidebar-backdrop"
-    @click="closeBackdrop"
-  ></div>
+  <div v-if="show" class="sidebar-backdrop" @click="closeBackdrop"></div>
 </template>
 
 <style scoped>
@@ -33,6 +29,13 @@ const closeBackdrop = () => {
   animation: fadeIn 0.3s ease forwards;
 }
 
+/* Hide backdrop on larger screens - sidebar should stay open on desktop */
+@media (min-width: 769px) {
+  .sidebar-backdrop {
+    display: none;
+  }
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -41,4 +44,4 @@ const closeBackdrop = () => {
     opacity: 1;
   }
 }
-</style> 
+</style>

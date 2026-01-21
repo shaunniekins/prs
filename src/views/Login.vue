@@ -1,78 +1,76 @@
 <script setup>
-import { ref, onMounted, reactive } from "vue";
-import { useRouter, useRoute } from "vue-router";
-import { useAuthStore } from "../stores/auth";
+import { ref, reactive, computed } from "vue";
+import { useRouter } from "vue-router";
+import { useAuthStore } from "../stores/auth.js";
 
 const router = useRouter();
-const route = useRoute();
 const authStore = useAuthStore();
 
 // Login form data
 const loginForm = reactive({
-  username: "",
+  email: "",
   password: "",
-  // role removed as it's now automatically determined
 });
 
 // UI state
-const isLoading = ref(false);
 const errorMessage = ref("");
-const autoLogoutMessage = ref("");
 const successMessage = ref("");
 const showLoginFormPassword = ref(false);
+const isLoading = ref(false);
+const isInteracting = ref(true);
 
-// Check if user was auto-logged out
-onMounted(() => {
-  if (route.query.autoLogout === "true") {
-    autoLogoutMessage.value =
-      "You have been automatically logged out due to inactivity.";
-  }
+// Computed properties for form binding
+const currentEmail = computed({
+  get: () => loginForm.email,
+  set: (value) => {
+    loginForm.email = value;
+  },
 });
 
-// Login function
+const currentPassword = computed({
+  get: () => loginForm.password,
+  set: (value) => {
+    loginForm.password = value;
+  },
+});
+
+// Login function using Supabase authentication
 const login = async () => {
   errorMessage.value = "";
   successMessage.value = "";
+  isLoading.value = true;
 
-  if (!loginForm.username || !loginForm.password) {
-    errorMessage.value = "Please enter both username and password";
+  if (!loginForm.email || !loginForm.password) {
+    errorMessage.value = "Please enter both email/username and password";
+    isLoading.value = false;
     return;
   }
 
-  isLoading.value = true;
-
   try {
-    // Use the auth store to login
-    const result = await authStore.login({
-      username: loginForm.username,
-      password: loginForm.password,
-    });
+    const result = await authStore.login(loginForm);
 
     if (result.success) {
+      successMessage.value = result.message;
+
       // Redirect based on user role
-      const roleRoute = getDefaultRouteForRole(result.user.role);
-      router.push(roleRoute);
+      setTimeout(() => {
+        if (result.role === "admin") {
+          router.push("/admin");
+        } else if (result.role === "nurse") {
+          router.push("/nurse");
+        } else if (result.role === "patient") {
+          router.push("/patient");
+        } else {
+          errorMessage.value = "Unknown user role detected";
+        }
+      }, 500);
     } else {
-      errorMessage.value = result.error || "Invalid username or password";
+      errorMessage.value = result.error;
     }
   } catch (error) {
-    errorMessage.value = error.message || "Invalid username or password";
+    errorMessage.value = error.message || "Login failed";
   } finally {
     isLoading.value = false;
-  }
-};
-
-// Helper function to get default route for role
-const getDefaultRouteForRole = (role) => {
-  switch (role) {
-    case "admin":
-      return "/admin";
-    case "nurse":
-      return "/nurse";
-    case "patient":
-      return "/patient";
-    default:
-      return "/login";
   }
 };
 
@@ -81,17 +79,22 @@ const toggleLoginFormPassword = () => {
   showLoginFormPassword.value = !showLoginFormPassword.value;
 };
 
-// Function to fill demo account credentials
-const fillDemoAccount = (username, password) => {
-  loginForm.username = username.toLowerCase();
-  loginForm.password = password;
-  // role parameter removed as it's now automatically determined
+// Reset forms
+const resetForms = () => {
+  loginForm.email = "";
+  loginForm.password = "";
+  errorMessage.value = "";
+  successMessage.value = "";
+};
+
+const handleFocus = () => {
+  isInteracting.value = true;
 };
 </script>
 
 <template>
   <div class="auth-page">
-    <div class="auth-container">
+    <div class="auth-container" :class="{ 'is-interacting': isInteracting }">
       <!-- Animated background elements -->
       <div class="animated-bg">
         <div class="circle circle-1"></div>
@@ -108,42 +111,73 @@ const fillDemoAccount = (username, password) => {
               <i class="bi bi-hospital"></i>
             </div>
             <h1>Patient Record System</h1>
-            <p class="subtitle">Sign in to your account</p>
+            <p class="subtitle">Please sign in to continue</p>
           </div>
 
-          <div v-if="errorMessage" class="alert alert-danger">
+          <!-- Enhanced Error Display -->
+          <div v-if="errorMessage" class="alert alert-danger animate-slide-in">
             <i class="bi bi-exclamation-triangle-fill me-2"></i>
-            {{ errorMessage }}
+            <div class="alert-content">
+              <strong>Login Failed</strong>
+              <p class="mb-0">{{ errorMessage }}</p>
+            </div>
+            <button
+              type="button"
+              class="btn-close"
+              @click="errorMessage = ''"
+              :aria-label="'Dismiss error message'"
+            ></button>
           </div>
 
-          <div v-if="autoLogoutMessage" class="alert alert-warning">
-            <i class="bi bi-exclamation-triangle me-2"></i>
-            {{ autoLogoutMessage }}
+          <!-- Enhanced Loading State -->
+          <div v-if="isLoading" class="alert alert-info animate-pulse">
+            <div class="loading-content">
+              <div class="loading-spinner">
+                <i class="bi bi-arrow-clockwise animate-spin"></i>
+              </div>
+              <div class="loading-text">
+                <span v-if="loginForm.email.includes('@')"
+                  >Authenticating...</span
+                >
+                <span v-else>Looking up username and authenticating...</span>
+                <div class="loading-progress">
+                  <div class="progress-bar">
+                    <div class="progress-fill animate-progress"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div v-if="successMessage" class="alert alert-success">
+          <!-- Enhanced Success Message -->
+          <div
+            v-if="successMessage"
+            class="alert alert-success animate-fade-in"
+          >
             <i class="bi bi-check-circle-fill me-2"></i>
             {{ successMessage }}
           </div>
 
-          <form @submit.prevent="login" novalidate>
+          <form @submit.prevent="login()" novalidate>
+            <!-- Email field -->
             <div class="form-group">
-              <label for="username">Username</label>
+              <label for="email">Username or Email</label>
               <div class="input-container">
-                <i class="bi bi-person input-icon" aria-hidden="true"></i>
+                <i class="bi bi-envelope input-icon" aria-hidden="true"></i>
                 <input
                   type="text"
-                  id="username"
-                  v-model="loginForm.username"
-                  placeholder="Enter your username"
-                  autocomplete="username"
+                  id="email"
+                  v-model="currentEmail"
+                  placeholder="Enter your username or email"
+                  autocomplete="username email"
                   required
-                  aria-describedby="username-help"
+                  aria-describedby="email-help"
                   :aria-invalid="errorMessage ? 'true' : 'false'"
+                  @focus="handleFocus"
                 />
               </div>
-              <small id="username-help" class="form-help">
-                Enter your registered username
+              <small id="email-help" class="form-help">
+                Enter your username or registered email address
               </small>
             </div>
 
@@ -156,12 +190,13 @@ const fillDemoAccount = (username, password) => {
                 <input
                   :type="showLoginFormPassword ? 'text' : 'password'"
                   id="password"
-                  v-model="loginForm.password"
+                  v-model="currentPassword"
                   placeholder="Enter your password"
                   autocomplete="current-password"
                   required
                   aria-describedby="password-help"
                   :aria-invalid="errorMessage ? 'true' : 'false'"
+                  @focus="handleFocus"
                 />
                 <button
                   type="button"
@@ -197,37 +232,6 @@ const fillDemoAccount = (username, password) => {
                 <span>{{ isLoading ? "Signing in..." : "Sign in" }}</span>
               </button>
             </div>
-
-            <!-- Demo Account Buttons -->
-            <div class="demo-accounts">
-              <p class="demo-title">Demo Accounts:</p>
-              <div class="demo-buttons">
-                <button
-                  type="button"
-                  class="demo-button admin-demo"
-                  @click="fillDemoAccount('admin', 'password')"
-                >
-                  <i class="bi bi-shield-check"></i>
-                  Admin
-                </button>
-                <button
-                  type="button"
-                  class="demo-button nurse-demo"
-                  @click="fillDemoAccount('nurse.demo', 'password')"
-                >
-                  <i class="bi bi-heart-pulse"></i>
-                  Nurse
-                </button>
-                <button
-                  type="button"
-                  class="demo-button patient-demo"
-                  @click="fillDemoAccount('john.doe', 'password')"
-                >
-                  <i class="bi bi-person"></i>
-                  Patient
-                </button>
-              </div>
-            </div>
           </form>
         </div>
       </div>
@@ -256,8 +260,18 @@ const fillDemoAccount = (username, password) => {
   border-radius: 20px;
   box-shadow: 0 15px 35px rgba(0, 0, 0, 0.15);
   background-color: #fff;
-  transition: all 0.6s ease;
+  transition: all 1.5s ease;
   transform-style: preserve-3d;
+}
+
+/* Mobile container adjustments */
+@media (max-width: 767px) {
+  .auth-container {
+    border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    margin: 0;
+    transition: all 1s ease;
+  }
 }
 
 .auth-content {
@@ -282,7 +296,7 @@ const fillDemoAccount = (username, password) => {
   border-radius: 50%;
   background: linear-gradient(45deg, #0d6efd, #0dcaf0);
   opacity: 0.1;
-  animation: float 10s infinite ease-in-out;
+  animation: float 20s infinite ease-in-out;
 }
 
 .circle-1 {
@@ -340,6 +354,10 @@ const fillDemoAccount = (username, password) => {
 .auth-header {
   text-align: center;
   margin-bottom: 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .logo-container {
@@ -352,7 +370,7 @@ const fillDemoAccount = (username, password) => {
   justify-content: center;
   margin: 0 auto 15px;
   box-shadow: 0 5px 15px rgba(13, 110, 253, 0.3);
-  animation: pulse 2s infinite;
+  animation: pulse 4s infinite;
 }
 
 .logo-container i {
@@ -391,6 +409,9 @@ const fillDemoAccount = (username, password) => {
 /* Form styling */
 .auth-form {
   transition: all 0.5s ease;
+  max-width: 400px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 .form-group {
@@ -493,7 +514,7 @@ select:focus {
   border: 3px solid rgba(255, 255, 255, 0.3);
   border-radius: 50%;
   border-top-color: white;
-  animation: spin 1s ease-in-out infinite;
+  animation: spin 1.5s ease-in-out infinite;
   margin-right: 10px;
 }
 
@@ -520,31 +541,124 @@ select:focus {
   text-decoration: underline;
 }
 
-/* Alerts */
+/* Enhanced Alerts */
 .alert {
-  padding: 12px 16px;
+  padding: 16px 20px;
   margin-bottom: 20px;
-  border-radius: 10px;
+  border-radius: 12px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  position: relative;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
 }
 
 .alert-danger {
-  background-color: #f8d7da;
+  background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
   color: #842029;
   border-left: 4px solid #dc3545;
 }
 
-.alert-warning {
-  background-color: #fff3cd;
-  color: #664d03;
-  border-left: 4px solid #ffc107;
+.alert-info {
+  background: linear-gradient(135deg, #cce7ff 0%, #bee5eb 100%);
+  color: #0c5460;
+  border-left: 4px solid #17a2b8;
 }
 
 .alert-success {
-  background-color: #d1e7dd;
-  color: #0f5132;
-  border-left: 4px solid #198754;
+  background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+  color: #155724;
+  border-left: 4px solid #28a745;
+}
+
+.alert-content {
+  flex: 1;
+}
+
+.alert-content strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+/* Enhanced Loading State */
+.loading-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.loading-spinner {
+  flex-shrink: 0;
+}
+
+.loading-spinner i {
+  font-size: 18px;
+  color: #0c5460;
+}
+
+.loading-text {
+  flex: 1;
+}
+
+.loading-progress {
+  margin-top: 8px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 3px;
+  background-color: rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #17a2b8, #0c5460);
+  border-radius: 2px;
+  animation: progress 3s ease-in-out infinite;
+}
+
+/* Enhanced Animations */
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes progress {
+  0% {
+    width: 0%;
+  }
+  50% {
+    width: 70%;
+  }
+  100% {
+    width: 100%;
+  }
+}
+
+.animate-slide-in {
+  animation: slideIn 0.6s ease-out;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.8s ease-in;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* Demo Account Buttons */
@@ -671,31 +785,192 @@ button:focus,
   box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25);
 }
 
-/* Better touch targets for mobile */
-@media (max-width: 768px) {
+/* Mobile-first responsive design */
+@media (max-width: 767px) {
+  .auth-page {
+    padding: var(--space-sm);
+    min-height: 100vh;
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding-top: var(--space-lg);
+  }
+
+  .auth-container {
+    width: 100%;
+    max-width: 100%;
+    min-height: auto;
+    border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    margin: 0;
+  }
+
+  .auth-content {
+    padding: var(--space-lg) var(--space-md);
+  }
+
+  .auth-header {
+    margin-bottom: var(--space-lg);
+    text-align: center;
+  }
+
+  .logo-container {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto var(--space-md);
+  }
+
+  .logo-container i {
+    font-size: 28px;
+  }
+
+  .auth-header h1 {
+    font-size: 24px;
+    margin-bottom: var(--space-xs);
+  }
+
+  .subtitle {
+    font-size: 14px;
+  }
+
+  .auth-form {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .form-group {
+    margin-bottom: var(--space-md);
+  }
+
   .input-container {
     position: relative;
   }
 
+  input,
+  select {
+    padding: 14px 14px 14px 44px;
+    font-size: 16px; /* Prevent zoom on iOS */
+    border-radius: 8px;
+  }
+
+  .input-icon {
+    left: 14px;
+    font-size: 16px;
+  }
+
   .toggle-password {
-    right: 12px;
-    padding: 8px;
+    right: 14px;
+    padding: 10px;
     min-width: 44px;
     min-height: 44px;
     display: flex;
     align-items: center;
     justify-content: center;
+    font-size: 16px;
+  }
+
+  .primary-button {
+    width: 100%;
+    padding: 14px;
+    font-size: 16px;
+    border-radius: 8px;
+    margin-top: var(--space-sm);
+  }
+
+  .alert {
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+
+  .loading-content {
+    gap: 10px;
+  }
+
+  .loading-spinner i {
+    font-size: 16px;
+  }
+
+  .loading-text {
+    font-size: 14px;
+  }
+
+  .progress-bar {
+    height: 2px;
+  }
+
+  /* Demo accounts section */
+  .demo-accounts {
+    margin-top: var(--space-lg);
+    padding-top: var(--space-md);
+  }
+
+  .demo-title {
+    font-size: 12px;
+    margin-bottom: var(--space-sm);
   }
 
   .demo-buttons {
     grid-template-columns: 1fr;
-    gap: 12px;
+    gap: var(--space-sm);
   }
 
   .demo-button {
-    padding: 16px;
-    font-size: 16px;
-    min-height: 48px;
+    padding: 10px 12px;
+    font-size: 13px;
+    border-radius: 6px;
+  }
+
+  .demo-button i {
+    font-size: 14px;
+  }
+}
+
+/* Small tablets and large phones */
+@media (min-width: 480px) and (max-width: 767px) {
+  .auth-container {
+    max-width: 400px;
+    margin: var(--space-lg) auto;
+  }
+
+  .auth-content {
+    padding: var(--space-xl) var(--space-lg);
+  }
+
+  .logo-container {
+    width: 72px;
+    height: 72px;
+  }
+
+  .logo-container i {
+    font-size: 32px;
+  }
+
+  .auth-header h1 {
+    font-size: 26px;
+  }
+
+  .subtitle {
+    font-size: 15px;
+  }
+
+  .demo-buttons {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Touch device optimizations */
+@media (hover: none) and (pointer: coarse) {
+  .primary-button:hover {
+    transform: none; /* Disable hover effects on touch devices */
+  }
+
+  .demo-button:hover {
+    transform: none;
+  }
+
+  .toggle-password:hover,
+  .toggle-password:focus {
+    background-color: rgba(13, 110, 253, 0.1);
   }
 }
 </style>

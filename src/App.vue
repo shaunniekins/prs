@@ -2,13 +2,11 @@
 import MainLayout from "./layouts/MainLayout.vue";
 import { onMounted } from "vue";
 import { generateAnimationCSS } from "./utils/animationUtils";
-import NotifyManager from "./components/NotifyManager.vue";
 import ErrorBoundary from "./components/ErrorBoundary.vue";
 </script>
 
 <template>
   <ErrorBoundary>
-    <NotifyManager />
     <MainLayout>
       <router-view />
     </MainLayout>

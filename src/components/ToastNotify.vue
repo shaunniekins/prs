@@ -138,26 +138,72 @@ onUnmounted(() => {
 /* Enhanced mobile responsiveness */
 @media (max-width: 768px) {
   .toast-notify {
-    left: 10px;
-    right: 10px;
+    left: var(--space-sm);
+    right: var(--space-sm);
     transform: none;
-    bottom: 20px;
-    max-width: calc(100% - 20px);
-    padding: 16px;
-    font-size: 14px;
+    bottom: var(--space-lg);
+    max-width: calc(100vw - var(--space-md));
+    padding: var(--space-lg);
+    font-size: var(--font-size-sm);
   }
 
   .toast-message {
-    font-size: 0.95rem;
+    font-size: var(--font-size-sm);
     text-align: left;
-    margin-bottom: 12px;
+    margin-bottom: var(--space-md);
   }
 
   .toast-ok-btn {
     align-self: stretch;
-    padding: 12px 24px;
-    font-size: 16px;
-    min-height: 48px;
+    padding: var(--space-md) var(--space-xl);
+    font-size: var(--font-size-base);
+    min-height: var(--touch-target-comfortable);
+  }
+}
+
+/* Small mobile devices */
+@media (max-width: 480px) {
+  .toast-notify {
+    left: var(--space-xs);
+    right: var(--space-xs);
+    bottom: var(--space-md);
+    padding: var(--space-md);
+  }
+
+  .toast-message {
+    font-size: var(--font-size-sm);
+    margin-bottom: var(--space-sm);
+  }
+
+  .toast-ok-btn {
+    padding: var(--space-sm) var(--space-lg);
+    min-height: var(--touch-target-min);
+  }
+}
+
+/* Tablet adjustments */
+@media (min-width: 769px) and (max-width: 1023px) {
+  .toast-notify {
+    max-width: 400px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+}
+
+/* Large screens */
+@media (min-width: 1200px) {
+  .toast-notify {
+    max-width: 500px;
+    padding: var(--space-xl);
+  }
+
+  .toast-message {
+    font-size: var(--font-size-lg);
+  }
+
+  .toast-ok-btn {
+    padding: var(--space-lg) var(--space-xxl);
+    font-size: var(--font-size-lg);
   }
 }
 

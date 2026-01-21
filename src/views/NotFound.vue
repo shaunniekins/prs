@@ -4,20 +4,8 @@ import { useRouter } from "vue-router";
 const router = useRouter();
 
 const goHome = () => {
-  const userRole = localStorage.getItem("userRole") || "guest";
-  switch (userRole) {
-    case "admin":
-      router.push("/admin");
-      break;
-    case "nurse":
-      router.push("/nurse");
-      break;
-    case "patient":
-      router.push("/patient");
-      break;
-    default:
-      router.push("/login");
-  }
+  // Redirect to login as default
+  router.push("/login");
 };
 </script>
 

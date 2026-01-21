@@ -32,6 +32,11 @@ const emit = defineEmits(["toggle", "close"]);
 const userRole = computed(() => authStore.userRole);
 const user = computed(() => authStore.user);
 
+// Methods
+const logout = () => {
+  authStore.logout();
+};
+
 // Sidebar navigation items based on role
 const adminNavItems = [
   {
@@ -82,6 +87,12 @@ const adminNavItems = [
     route: "/admin/account-creation",
     description: "Create new user accounts",
   },
+  {
+    title: "Logout",
+    icon: "bi-box-arrow-right",
+    method: logout,
+    description: "Sign out of your account",
+  },
 ];
 
 const nurseNavItems = [
@@ -127,6 +138,12 @@ const nurseNavItems = [
     route: "/nurse/notifications",
     description: "Personal notifications and alerts",
   },
+  {
+    title: "Logout",
+    icon: "bi-box-arrow-right",
+    method: logout,
+    description: "Sign out of your account",
+  },
 ];
 
 const patientNavItems = [
@@ -153,6 +170,12 @@ const patientNavItems = [
     icon: "bi-bell",
     route: "/patient/notifications",
     description: "Health reminders and alerts",
+  },
+  {
+    title: "Logout",
+    icon: "bi-box-arrow-right",
+    method: logout,
+    description: "Sign out of your account",
   },
 ];
 
@@ -183,21 +206,20 @@ const isActive = (routePath) => {
   return route.path === routePath;
 };
 
-const logout = () => {
-  authStore.logout();
-  router.push("/login");
-};
-
 const toggleSidebar = () => {
   isCollapsed.value = !isCollapsed.value;
   emit("toggle", isCollapsed.value);
 };
 
 // Enhanced keyboard navigation
-const handleKeyDown = (event, routePath) => {
+const handleKeyDown = (event, item) => {
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
-    navigateTo(routePath);
+    if (item.method) {
+      item.method();
+    } else {
+      navigateTo(item.route);
+    }
   }
 };
 </script>
@@ -242,13 +264,17 @@ const handleKeyDown = (event, routePath) => {
 
     <!-- Navigation Menu -->
     <nav class="sidebar-nav" role="navigation" aria-label="Main navigation">
-      <div v-for="item in navItems" :key="item.route" class="nav-item">
+      <div
+        v-for="item in navItems"
+        :key="item.route || item.title"
+        class="nav-item"
+      >
         <button
           class="nav-link w-100 text-start"
-          :class="{ active: isActive(item.route) }"
-          @click="navigateTo(item.route)"
-          @keydown="handleKeyDown($event, item.route)"
-          :aria-current="isActive(item.route) ? 'page' : 'false'"
+          :class="{ active: item.route && isActive(item.route) }"
+          @click="item.method ? item.method() : navigateTo(item.route)"
+          @keydown="handleKeyDown($event, item)"
+          :aria-current="item.route && isActive(item.route) ? 'page' : 'false'"
           :aria-label="`${item.title} - ${item.description}`"
           :title="`${item.title} - ${item.description}`"
           tabindex="0"
@@ -257,7 +283,9 @@ const handleKeyDown = (event, routePath) => {
             <div class="nav-icon me-3" aria-hidden="true">
               <i
                 :class="`${item.icon} ${
-                  isActive(item.route) ? 'text-white' : 'text-white-50'
+                  item.route && isActive(item.route)
+                    ? 'text-white'
+                    : 'text-white-50'
                 }`"
               ></i>
             </div>
@@ -271,28 +299,6 @@ const handleKeyDown = (event, routePath) => {
         </button>
       </div>
     </nav>
-
-    <!-- Sidebar Footer -->
-    <div class="sidebar-footer mt-auto">
-      <div class="d-flex flex-column gap-2">
-        <button
-          class="nav-link w-100 text-start text-danger-emphasis"
-          @click="logout"
-        >
-          <div class="nav-link-content">
-            <div class="nav-icon me-3">
-              <i class="bi bi-box-arrow-right text-danger"></i>
-            </div>
-            <div v-if="!isCollapsed" class="nav-text">
-              <div class="nav-title">Logout</div>
-              <small class="nav-description text-white-50"
-                >Sign out of your account</small
-              >
-            </div>
-          </div>
-        </button>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -557,38 +563,14 @@ const handleKeyDown = (event, routePath) => {
   outline-offset: 2px;
 }
 
-/* Enhanced touch targets for mobile */
-@media (max-width: 768px) {
-  .nav-link {
-    padding: 1rem 1rem;
-    min-height: 48px;
-    display: flex;
-    align-items: center;
-  }
-
-  .nav-icon {
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .nav-title {
-    font-size: 1rem;
-    line-height: 1.2;
-  }
-
-  .nav-description {
-    font-size: 0.8rem;
-    line-height: 1.1;
-  }
-}
+/* Enhanced touch targets for mobile - consolidated above */
 
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .role-based-sidebar {
     width: 280px; /* Full width on mobile */
+    z-index: 1050; /* Higher z-index for mobile overlay */
+    box-shadow: 2px 0 20px rgba(0, 0, 0, 0.3); /* Enhanced shadow for mobile */
   }
 
   .role-based-sidebar.visible {
@@ -602,7 +584,7 @@ const handleKeyDown = (event, routePath) => {
   /* Enhanced scrollbar for mobile */
   .sidebar-nav {
     max-height: calc(100vh - 180px); /* Adjust for mobile header/footer */
-    padding: 0.75rem 0;
+    padding: var(--space-sm) 0;
   }
 
   .sidebar-nav::-webkit-scrollbar {
@@ -612,12 +594,81 @@ const handleKeyDown = (event, routePath) => {
   .sidebar-nav::-webkit-scrollbar-thumb {
     min-height: 30px; /* Smaller minimum height on mobile */
   }
+
+  /* Mobile-specific header adjustments */
+  .sidebar-header {
+    padding: var(--space-lg) var(--space-md);
+    position: relative;
+  }
+
+  .sidebar-user {
+    padding: 0 var(--space-md);
+    margin-bottom: var(--space-lg);
+  }
+
+  /* Mobile navigation improvements */
+  .nav-link {
+    padding: var(--space-md) var(--space-md);
+    min-height: 56px; /* Touch-friendly target */
+    display: flex;
+    align-items: center;
+    transition: all 0.2s ease;
+  }
+
+  .nav-link:hover,
+  .nav-link:focus {
+    background-color: rgba(255, 255, 255, 0.15);
+    transform: translateX(4px);
+  }
+
+  .nav-link.active {
+    background-color: rgba(255, 255, 255, 0.25);
+    border-right: 4px solid white;
+    transform: translateX(4px);
+  }
+
+  .nav-icon {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .nav-text {
+    flex: 1;
+    min-width: 0; /* Allow text to shrink */
+  }
+
+  .nav-title {
+    font-size: var(--font-size-base);
+    font-weight: 500;
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .nav-description {
+    font-size: var(--font-size-sm);
+    opacity: 0.9;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
 }
 
 @media (max-width: 480px) {
+  .role-based-sidebar {
+    width: 100vw; /* Full viewport width on very small screens */
+    max-width: 320px; /* But not wider than 320px */
+  }
+
   .sidebar-nav {
     max-height: calc(100vh - 160px); /* Further adjustment for small screens */
-    padding: 0.5rem 0;
+    padding: var(--space-xs) 0;
   }
 
   .sidebar-nav::-webkit-scrollbar {
@@ -627,12 +678,121 @@ const handleKeyDown = (event, routePath) => {
   .sidebar-nav::-webkit-scrollbar-thumb {
     min-height: 20px;
   }
+
+  .nav-link {
+    padding: var(--space-md) var(--space-sm);
+    min-height: 52px; /* Slightly smaller for very small screens */
+  }
+
+  .nav-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .nav-title {
+    font-size: var(--font-size-sm);
+  }
+
+  .nav-description {
+    font-size: var(--font-size-xs);
+    -webkit-line-clamp: 1; /* Single line on very small screens */
+  }
+
+  .sidebar-header {
+    padding: var(--space-md) var(--space-sm);
+  }
+
+  .sidebar-user {
+    padding: 0 var(--space-sm);
+    margin-bottom: var(--space-md);
+  }
+
+  .user-avatar {
+    width: 40px;
+    height: 40px;
+  }
+
+  .sidebar-title h6 {
+    font-size: 1rem;
+  }
+
+  .sidebar-title small {
+    font-size: 0.75rem;
+  }
 }
 
 /* Landscape orientation adjustments */
 @media (max-height: 600px) and (orientation: landscape) {
   .sidebar-nav {
     max-height: calc(100vh - 140px); /* Reduce height for landscape mode */
+  }
+
+  .nav-link {
+    padding: var(--space-sm) var(--space-md);
+  }
+
+  .nav-title {
+    font-size: var(--font-size-sm);
+  }
+
+  .nav-description {
+    display: none; /* Hide descriptions in landscape mode */
+  }
+}
+
+/* Tablet-specific adjustments */
+@media (min-width: 769px) and (max-width: 1023px) {
+  .role-based-sidebar {
+    width: 260px;
+  }
+
+  .role-based-sidebar.collapsed {
+    width: 75px;
+  }
+
+  .sidebar-nav {
+    max-height: calc(100vh - 200px);
+  }
+
+  .nav-link {
+    padding: var(--space-md) var(--space-lg);
+  }
+
+  .nav-icon {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* Large desktop adjustments */
+@media (min-width: 1400px) {
+  .role-based-sidebar {
+    width: 320px;
+  }
+
+  .role-based-sidebar.collapsed {
+    width: 90px;
+  }
+
+  .sidebar-nav {
+    max-height: calc(100vh - 220px);
+  }
+
+  .nav-link {
+    padding: var(--space-lg) var(--space-xl);
+  }
+
+  .nav-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .nav-title {
+    font-size: var(--font-size-lg);
+  }
+
+  .nav-description {
+    font-size: var(--font-size-base);
   }
 }
 </style>
