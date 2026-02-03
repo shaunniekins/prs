@@ -32,14 +32,17 @@ export const validateSupabaseConfig = () => {
     );
   }
 
-  // Validate publishable key
+  // Validate publishable key - support both new format and legacy anon key
   if (!supabaseKey) {
     errors.push(
       "VITE_SUPABASE_PUBLISHABLE_KEY environment variable is not set",
     );
-  } else if (!supabaseKey.startsWith("sb_publishable_")) {
+  } else if (
+    !supabaseKey.startsWith("sb_publishable_") &&
+    !supabaseKey.startsWith("eyJ")
+  ) {
     errors.push(
-      "Invalid publishable key format. Should start with 'sb_publishable_'",
+      "Invalid publishable key format. Should start with 'sb_publishable_' or 'eyJ'",
     );
   }
 

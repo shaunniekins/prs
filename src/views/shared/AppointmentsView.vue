@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useNotify } from "@/composables/useNotify.js";
 import { useSupabase } from "@/composables/useSupabase.js";
 import { useAuthStore } from "@/stores/auth.js";
+import { useAuthGuard } from "@/composables/useAuthGuard.js";
 import { supabase } from "@/config/supabaseConfig.js";
 
 // Define props for role-based customization
@@ -309,19 +310,20 @@ const selectDayAppointment = (appointment) => {
   showViewModal.value = true;
 };
 
+// Initialize auth guard
+const { waitForAuthenticated } = useAuthGuard();
+
 // Methods
 const fetchAppointments = async () => {
   loading.value = true;
   error.value = null;
 
   try {
-    // Ensure auth is initialized
-    if (!authStore.isInitialized) {
-      await authStore.initializeAuth();
-    }
+    // Use the auth guard to wait for authentication with proper timing handling
+    const { success, error: authErr } = await waitForAuthenticated();
 
-    if (!authStore.isAuthenticated || !authStore.user) {
-      throw new Error("Please log in to view appointments");
+    if (!success) {
+      throw new Error(authErr || "Please log in to view appointments");
     }
 
     let data;

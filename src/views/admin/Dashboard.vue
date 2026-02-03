@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import useSupabase from "@/composables/useSupabase";
 import { useAuthStore } from "../../stores/auth";
+import { useAuthGuard } from "../../composables/useAuthGuard";
 
 // Initialize Supabase composable
 const {
@@ -34,19 +35,23 @@ const isAuthenticated = ref(false);
 const userRole = ref("");
 const authLoading = ref(true);
 
+// Initialize auth guard
+const { waitForAdminAccess } = useAuthGuard();
+
 // Initialize auth state
 const initializeAuth = async () => {
   try {
-    // Initialize authentication first
-    const authStore = useAuthStore();
-    await authStore.initializeAuth();
+    // Use the auth guard to wait for authentication with proper timing handling
+    const { success, error: authErr } = await waitForAdminAccess();
 
-    // Check if user is authenticated and has admin role
-    if (!authStore.isAuthenticated || authStore.userRole !== "admin") {
-      throw new Error("Access denied. Admin privileges required.");
+    if (!success) {
+      errorMessage.value =
+        authErr || "Access denied. Admin privileges required.";
+      return;
     }
 
     // Get current user info from auth store
+    const authStore = useAuthStore();
     user.value = authStore.user;
     isAuthenticated.value = authStore.isAuthenticated;
     userRole.value = authStore.userRole;
@@ -335,7 +340,7 @@ onMounted(async () => {
                     <div class="timeline-marker">
                       <i
                         :class="`bi ${getActivityIcon(
-                          activity.type
+                          activity.type,
                         )} text-${getActivityColor(activity.type)}`"
                       ></i>
                     </div>

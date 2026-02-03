@@ -5,10 +5,12 @@ import {
   realtimeService,
 } from "../../services/supabaseService.js";
 import { useAuthStore } from "../../stores/auth.js";
+import { useAuthGuard } from "../../composables/useAuthGuard.js";
 import api from "../../services/api.js";
 
 // Auth store
 const authStore = useAuthStore();
+const { waitForAdminAccess } = useAuthGuard();
 
 // Reactive data
 const loading = ref(false);
@@ -473,13 +475,11 @@ const staffChannel = ref(null);
 
 // Initialize staff data on mount
 onMounted(async () => {
-  // Initialize auth if needed
-  if (!authStore.isInitialized) {
-    await authStore.initializeAuth();
-  }
+  // Use the auth guard to wait for authentication with proper timing handling
+  const { success, error: authErr } = await waitForAdminAccess();
 
-  if (!authStore.isAuthenticated || !authStore.user) {
-    console.error("User not authenticated");
+  if (!success) {
+    console.error("User not authenticated or not admin", authErr);
     return;
   }
 

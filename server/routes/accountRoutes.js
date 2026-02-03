@@ -194,7 +194,18 @@ router.post("/", async (req, res) => {
     });
   } catch (error) {
     console.error("Error creating account:", error);
-    res.status(500).json({ message: "Internal server error" });
+    console.error("Error details:", {
+      message: error.message,
+      code: error.code,
+      status: error.status,
+      details: error.details,
+      hint: error.hint,
+    });
+    res.status(500).json({
+      message: error.message || "Internal server error",
+      code: error.code,
+      details: error.details,
+    });
   }
 });
 

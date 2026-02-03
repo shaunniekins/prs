@@ -489,15 +489,10 @@ export const staffService = {
   // Get all staff (admin only) - uses server API to get auth info including last_sign_in_at
   getAllStaff: async () => {
     try {
-      console.log("📡 [staffService] Calling API /staff...");
       // Import api dynamically to avoid circular dependency
       const { default: api } = await import("./api.js");
       const response = await api.get("/staff");
-      console.log(
-        "✅ [staffService] API response:",
-        response.data?.length,
-        "records",
-      );
+
       return { data: response.data, error: null };
     } catch (error) {
       console.error(
@@ -505,7 +500,6 @@ export const staffService = {
         error.message,
       );
       // Fallback to direct Supabase query if API fails
-      console.log("📡 [staffService] Querying Supabase directly...");
       const { data, error: dbError } = await supabase
         .from("Staff")
         .select(
@@ -516,12 +510,6 @@ export const staffService = {
         `,
         )
         .order("StaffID", { ascending: false });
-      console.log(
-        "📊 [staffService] Supabase result:",
-        data?.length,
-        "records, error:",
-        dbError,
-      );
       return { data, error: dbError };
     }
   },

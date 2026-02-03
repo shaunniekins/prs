@@ -2,12 +2,14 @@
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useSupabase } from "../../composables/useSupabase.js";
 import { useAuthStore } from "../../stores/auth.js";
+import { useAuthGuard } from "../../composables/useAuthGuard.js";
 
 // Initialize composables
 const { appointments, medicalRecords, patients, loading, error } =
   useSupabase();
 const authStore = useAuthStore();
 const { user } = authStore;
+const { waitForPatientAccess } = useAuthGuard();
 
 // Reactive data
 const appointmentsData = ref([]);
@@ -97,12 +99,11 @@ const fetchData = async () => {
   error.value = null;
 
   try {
-    if (!authStore.isInitialized) {
-      await authStore.initializeAuth();
-    }
+    // Use the auth guard to wait for authentication with proper timing handling
+    const { success, error: authErr } = await waitForPatientAccess();
 
-    if (!authStore.isAuthenticated || !authStore.user) {
-      throw new Error("Please log in to view the dashboard");
+    if (!success) {
+      throw new Error(authErr || "Please log in to view the dashboard");
     }
 
     const appointmentsResult = await appointments.getMyAppointments();

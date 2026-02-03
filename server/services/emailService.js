@@ -278,6 +278,101 @@ Baan KM-3 Health Center Information System
   }
 }
 
+/**
+ * Generate appointment reminder email template
+ */
+function generateAppointmentReminderEmailTemplate(appointment) {
+  const patientName = `${appointment.Patients.FirstName} ${appointment.Patients.Surname}`;
+  const dateTime = new Date(appointment.DateTime).toLocaleString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Appointment Reminder</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; }
+        .container { padding: 20px; border: 1px solid #ddd; border-radius: 8px; margin-top: 20px; }
+        .header { color: #007bff; border-bottom: 2px solid #007bff; padding-bottom: 10px; margin-bottom: 20px; }
+        .details { background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0; }
+        .footer { font-size: 12px; color: #666; margin-top: 30px; text-align: center; border-top: 1px solid #eee; padding-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>Appointment Reminder</h2>
+        </div>
+        <p>Dear ${patientName},</p>
+        <p>This is a friendly reminder about your upcoming appointment at <strong>Baan KM-3 Health Center</strong>.</p>
+        
+        <div class="details">
+            <p><strong>Date & Time:</strong> ${dateTime}</p>
+            <p><strong>Reason:</strong> ${appointment.Reason || "Check-up"}</p>
+        </div>
+
+        <p>Please arrive 10 minutes early. If you need to reschedule or cancel, please contact us immediately or manage your appointment through our online portal.</p>
+
+        <p>Best regards,<br>Baan KM-3 Health Center Team</p>
+
+        <div class="footer">
+            <p>This is an automated message. Please do not reply directly to this email.</p>
+        </div>
+    </div>
+</body>
+</html>`;
+}
+
+/**
+ * Send appointment reminder email
+ */
+export async function sendAppointmentReminderEmail(appointment) {
+  try {
+    const transporter = await createTransporter();
+
+    // Extract email from the nested Users object
+    // Structure: appointment.Patients.Users.Email
+    const email = appointment.Patients?.Users?.Email;
+
+    if (!email) {
+      console.warn(
+        `⚠️ No email found for patient ${appointment.Patients?.FirstName} (ID: ${appointment.PatientID})`,
+      );
+      return { success: false, message: "No email found" };
+    }
+
+    const patientName = `${appointment.Patients.FirstName} ${appointment.Patients.Surname}`;
+    const subject = "Appointment Reminder - Baan KM-3 Health Center";
+    const htmlContent = generateAppointmentReminderEmailTemplate(appointment);
+    const textContent = `Dear ${patientName}, This is a reminder for your appointment on ${new Date(appointment.DateTime).toLocaleString()}.`;
+
+    const info = await transporter.sendMail({
+      from: '"Baan KM-3 Health Center" <noreply@baankm3.com>',
+      to: email,
+      subject: subject,
+      text: textContent,
+      html: htmlContent,
+    });
+
+    console.log(`✅ Reminder sent to ${email}: %s`, info.messageId);
+    return { success: true, messageId: info.messageId };
+  } catch (error) {
+    console.error("❌ Error sending reminder:", error.message);
+    // Don't throw, just return failure so we can continue processing other reminders
+    return { success: false, error: error.message };
+  }
+}
+
 export default {
   sendAccountCreationEmail,
+  sendAppointmentReminderEmail,
 };
