@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useNotify } from "@/composables/useNotify.js";
 import { useSupabase } from "@/composables/useSupabase.js";
 import { useAuthStore } from "@/stores/auth.js";
+import { useAuthGuard } from "@/composables/useAuthGuard.js";
 import { supabase } from "@/config/supabaseConfig.js";
 
 // Define props for role-based customization
@@ -149,18 +150,20 @@ const stats = computed(() => {
   ];
 });
 
+// Initialize auth guard
+const { waitForAuthenticated } = useAuthGuard();
+
 // Methods
 const fetchNotifications = async () => {
   loading.value = true;
   error.value = null;
 
   try {
-    if (!authStore.isInitialized) {
-      await authStore.initializeAuth();
-    }
+    // Use the auth guard to wait for authentication with proper timing handling
+    const { success, error: authErr } = await waitForAuthenticated();
 
-    if (!authStore.isAuthenticated || !authStore.user) {
-      throw new Error("Please log in to view notifications");
+    if (!success) {
+      throw new Error(authErr || "Please log in to view notifications");
     }
 
     let data;

@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, defineProps } from "vue";
 import { useSupabase } from "../../composables/useSupabase.js";
 import { useAuthStore } from "../../stores/auth.js";
+import { useAuthGuard } from "../../composables/useAuthGuard.js";
 import { realtimeService } from "../../services/supabaseService.js";
 import api from "../../services/api.js";
 
@@ -570,15 +571,16 @@ const handlePatientUpdate = (payload) => {
   fetchPatients();
 };
 
+// Initialize auth guard
+const { waitForStaffAccess } = useAuthGuard();
+
 // Initialize on mount
 onMounted(async () => {
-  // Initialize auth if needed
-  if (!authStore.isInitialized) {
-    await authStore.initializeAuth();
-  }
+  // Use the auth guard to wait for authentication with proper timing handling
+  const { success, error: authErr } = await waitForStaffAccess();
 
-  if (!authStore.isAuthenticated || !authStore.user) {
-    console.error("User not authenticated");
+  if (!success) {
+    console.error("User not authenticated", authErr);
     return;
   }
 

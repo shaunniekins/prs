@@ -4,11 +4,13 @@ import { Line, Bar, Doughnut } from "vue-chartjs";
 import { useSupabase } from "../../composables/useSupabase.js";
 import { useAuth } from "../../composables/useAuth.js";
 import { useAuthStore } from "../../stores/auth.js";
+import { useAuthGuard } from "../../composables/useAuthGuard.js";
 
 // Initialize composables
 const { reports: reportOps, users: userOps } = useSupabase();
 const { requireAdminAccess } = useAuth();
 const authStore = useAuthStore();
+const { waitForAdminAccess, authError: guardError } = useAuthGuard();
 
 // Reactive data
 const loading = ref(false);
@@ -753,15 +755,24 @@ const getWorkloadData = () => {
 
 onMounted(async () => {
   try {
-    // Initialize auth if needed
-    if (!authStore.isInitialized) {
-      await authStore.initializeAuth();
+    loading.value = true;
+    error.value = null;
+
+    // Use the auth guard to wait for authentication with proper timing handling
+    const { success, error: authErr } = await waitForAdminAccess();
+
+    if (!success) {
+      error.value = authErr || "Admin access required. Please log in again.";
+      return;
     }
 
-    await requireAdminAccess();
     await initializeData();
-  } catch (error) {
-    console.error("Error initializing reports:", error);
+  } catch (err) {
+    console.error("Error initializing reports:", err);
+    error.value =
+      err.message || "Failed to load reports. Please try refreshing the page.";
+  } finally {
+    loading.value = false;
   }
 });
 </script>

@@ -5,15 +5,18 @@ import { authService, supabase } from "@/services/supabaseService.js";
 import api from "@/services/api.js";
 import { useNotify } from "@/composables/useNotify.js";
 import { useAuthStore } from "@/stores/auth.js";
+import { useAuthGuard } from "@/composables/useAuthGuard.js";
 import { VueDatePicker } from "@vuepic/vue-datepicker";
 import "@vuepic/vue-datepicker/dist/main.css";
 
 // Auth store
 const authStore = useAuthStore();
+const { waitForAdminAccess } = useAuthGuard();
 
 // Reactive data
 const creatingAccount = ref(false);
 const formErrors = ref({});
+const formTouched = ref({});
 const createdAccounts = ref([]);
 const accountHistory = ref([]);
 const loadingHistory = ref(false);
@@ -196,6 +199,11 @@ const isFormValid = computed(() => {
   //     "Unable to generate password. Please check birthdate.";
   // }
 
+  // Debug: Log validation errors to help identify issues
+  // if (Object.keys(formErrors.value).length > 0) {
+  //   console.log("Form validation errors:", formErrors.value);
+  // }
+
   return Object.keys(formErrors.value).length === 0;
 });
 
@@ -295,10 +303,48 @@ const fetchCreatedAccounts = async () => {
 const fetchAccountCreationHistory = async (params = {}) => {
   loadingHistory.value = true;
   try {
-    const response = await api.get("/admin/accounts/account-creation-history", {
-      params,
+    // Query Users table directly with Supabase instead of using Express API
+    // This ensures it works in deployed environments
+    const { data: users, error } = await supabase
+      .from("Users")
+      .select(
+        `
+        UserID,
+        Username,
+        Email,
+        RoleName,
+        fullName,
+        created_at,
+        Patients:Patients!Patients_UserID_fkey ( UserID, FirstName, Surname ),
+        Staff ( UserID, FirstName, Surname )
+      `,
+      )
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    // Transform data to match expected format
+    accountHistory.value = users.map((user) => {
+      const isPatient = user.RoleName === "patient";
+      const profile = isPatient ? user.Patients?.[0] : user.Staff?.[0];
+      return {
+        id: user.UserID,
+        type: isPatient ? "patient" : "staff",
+        name:
+          user.fullName ||
+          `${profile?.FirstName || ""} ${profile?.Surname || ""}`.trim(),
+        firstName: profile?.FirstName || "",
+        surname: profile?.Surname || "",
+        username: user.Username,
+        email: user.Email,
+        role: user.RoleName,
+        status: "active",
+        createdAt: user.created_at,
+        lastLogin: null,
+      };
     });
-    accountHistory.value = response.data;
   } catch (error) {
     console.error("Error fetching account creation history:", error);
     notify(`Error fetching account creation history: ${error.message}`, {
@@ -352,15 +398,16 @@ const openPreviewModal = (account) => {
 };
 
 onMounted(async () => {
-  // Initialize auth if needed
-  if (!authStore.isInitialized) {
-    await authStore.initializeAuth();
+  // Use the auth guard to wait for authentication with proper timing handling
+  const { success, error: authErr } = await waitForAdminAccess();
+
+  if (!success) {
+    console.error("User not authenticated or not admin", authErr);
+    return;
   }
 
-  if (authStore.isAuthenticated && authStore.user) {
-    fetchCreatedAccounts();
-    fetchAccountCreationHistory();
-  }
+  fetchCreatedAccounts();
+  fetchAccountCreationHistory();
 });
 
 const sendingCredentials = ref(false);
@@ -502,7 +549,7 @@ const createAccount = async (retryCount = 0) => {
       username: username,
       email: accountForm.value.email,
       role: accountForm.value.role,
-      password: generatedPassword.value, // Include generated password
+      password: generatedPassword.value,
       firstName: accountForm.value.firstName,
       lastName: accountForm.value.lastName,
       suffix: accountForm.value.suffix,
@@ -510,13 +557,10 @@ const createAccount = async (retryCount = 0) => {
       contactNumber: accountForm.value.contactNumber,
       address: accountForm.value.address,
       emergencyContactNumber: accountForm.value.emergencyContactNumber,
-      birthdate: accountForm.value.birthdate, // Include birthdate
+      birthdate: accountForm.value.birthdate,
     };
 
-    if (accountForm.value.role === "Staff") {
-      // Note: Department and Specialty fields not supported in current schema
-    }
-
+    // Use Express API for account creation (uses server-side admin API)
     const response = await api.post("/admin/accounts", payload);
 
     if (response.data?.error) {
@@ -527,7 +571,14 @@ const createAccount = async (retryCount = 0) => {
       type: "success",
       duration: 3000,
     });
-    createdAccountForEmail.value = response.data?.user || response.data;
+
+    createdAccountForEmail.value = {
+      ...response.data?.user,
+      username: username,
+      password: generatedPassword.value,
+      firstName: accountForm.value.firstName,
+      lastName: accountForm.value.lastName,
+    };
     showSuccessModal.value = true;
     resetForm();
     fetchCreatedAccounts(); // Refresh the list of created accounts
@@ -561,15 +612,22 @@ const createAccount = async (retryCount = 0) => {
     // Provide user-friendly error messages
     let errorMessage = "Failed to create account.";
     if (error.response?.status === 400) {
-      errorMessage = "Invalid data provided. Please check your inputs.";
+      errorMessage =
+        error.response?.data?.message ||
+        "Invalid data provided. Please check your inputs.";
     } else if (error.response?.status === 401) {
       errorMessage = "Authentication failed. Please log in again.";
     } else if (error.response?.status === 403) {
       errorMessage = "You don't have permission to create accounts.";
-    } else if (error.response?.status === 409) {
+    } else if (
+      error.response?.status === 409 ||
+      error.response?.data?.message?.includes("already")
+    ) {
       errorMessage = "An account with this email already exists.";
     } else if (error.response?.status >= 500) {
-      errorMessage = "Server error. Please try again later.";
+      errorMessage =
+        error.response?.data?.message ||
+        "Server error. Please try again later.";
     } else if (error.message) {
       errorMessage = `Failed to create account: ${error.message}`;
     }
@@ -608,6 +666,7 @@ const resetForm = () => {
     // Note: generatedPassword is a computed property, so we reset birthdate instead
   };
   formErrors.value = {};
+  formTouched.value = {};
 };
 </script>
 
@@ -626,7 +685,7 @@ const resetForm = () => {
 
     <!-- Main Form -->
     <div class="animate-fade-in-up">
-      <div class="row">
+      <div class="row position-relative" style="z-index: 10">
         <!-- Account Creation Form -->
         <div class="col-lg-8">
           <div class="card animate-fade-in-left">
@@ -660,10 +719,17 @@ const resetForm = () => {
                       v-model="accountForm.firstName"
                       type="text"
                       class="form-control"
-                      :class="{ 'is-invalid': formErrors.firstName }"
+                      :class="{
+                        'is-invalid':
+                          formTouched.firstName && formErrors.firstName,
+                      }"
                       required
+                      @blur="formTouched.firstName = true"
                     />
-                    <div v-if="formErrors.firstName" class="invalid-feedback">
+                    <div
+                      v-if="formTouched.firstName && formErrors.firstName"
+                      class="invalid-feedback"
+                    >
                       {{ formErrors.firstName }}
                     </div>
                   </div>
@@ -673,10 +739,17 @@ const resetForm = () => {
                       v-model="accountForm.lastName"
                       type="text"
                       class="form-control"
-                      :class="{ 'is-invalid': formErrors.lastName }"
+                      :class="{
+                        'is-invalid':
+                          formTouched.lastName && formErrors.lastName,
+                      }"
                       required
+                      @blur="formTouched.lastName = true"
                     />
-                    <div v-if="formErrors.lastName" class="invalid-feedback">
+                    <div
+                      v-if="formTouched.lastName && formErrors.lastName"
+                      class="invalid-feedback"
+                    >
                       {{ formErrors.lastName }}
                     </div>
                   </div>
@@ -750,10 +823,16 @@ const resetForm = () => {
                       v-model="accountForm.email"
                       type="email"
                       class="form-control"
-                      :class="{ 'is-invalid': formErrors.email }"
+                      :class="{
+                        'is-invalid': formTouched.email && formErrors.email,
+                      }"
                       required
+                      @blur="formTouched.email = true"
                     />
-                    <div v-if="formErrors.email" class="invalid-feedback">
+                    <div
+                      v-if="formTouched.email && formErrors.email"
+                      class="invalid-feedback"
+                    >
                       {{ formErrors.email }}
                     </div>
                   </div>
@@ -1253,6 +1332,11 @@ const resetForm = () => {
 </template>
 
 <style scoped>
+/* Date picker z-index fix */
+:deep(.dp__menu) {
+  z-index: 9999 !important;
+}
+
 /* Success modal fade-in animation */
 .modal.fade .modal-dialog {
   transition: transform 0.3s ease-out;

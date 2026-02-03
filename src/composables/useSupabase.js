@@ -114,18 +114,41 @@ export const useSupabase = () => {
     // Ensure auth is initialized and user data is available
     const authStore = useAuthStore();
 
-    // Initialize auth if not already done
-    if (!authStore.isAuthenticated || !authStore.user) {
-      await authStore.initializeAuth();
+    // Wait for authentication to be initialized with retry logic
+    // This handles timing issues in deployed environments where session restoration takes time
+    let attempts = 0;
+    const maxAttempts = 10;
+    let session = null;
+    let sessionError = null;
+
+    while (attempts < maxAttempts) {
+      // Initialize auth if not already done
+      if (!authStore.isAuthenticated || !authStore.user) {
+        await authStore.initializeAuth();
+      }
+
+      // Check if we have a valid session
+      const result = await supabase.auth.getSession();
+      session = result.data?.session;
+      sessionError = result.error;
+
+      if (session && !sessionError) {
+        break; // Session found, exit retry loop
+      }
+
+      // Wait before next attempt with exponential backoff
+      attempts++;
+      if (attempts < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, 200 * attempts));
+      }
     }
 
-    // Check if we have a valid session
-    const {
-      data: { session },
-      error: sessionError,
-    } = await supabase.auth.getSession();
     if (sessionError || !session) {
-      console.error("❌ [useSupabase] No valid session");
+      console.error(
+        "❌ [useSupabase] No valid session after",
+        attempts,
+        "attempts",
+      );
       throw new Error("Authentication required");
     }
 

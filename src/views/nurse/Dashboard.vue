@@ -2,9 +2,11 @@
 import { ref, computed, onMounted } from "vue";
 import { useSupabase } from "../../composables/useSupabase";
 import { useAuthStore } from "../../stores/auth";
+import { useAuthGuard } from "../../composables/useAuthGuard";
 
 // Auth store for checking authentication state
 const authStore = useAuthStore();
+const { waitForNurseAccess } = useAuthGuard();
 
 // Reactive data
 const loading = ref(false);
@@ -37,14 +39,11 @@ const fetchDashboardData = async () => {
   error.value = null;
 
   try {
-    // Ensure auth is initialized before fetching data
-    if (!authStore.isInitialized) {
-      await authStore.initializeAuth();
-    }
+    // Use the auth guard to wait for authentication with proper timing handling
+    const { success, error: authErr } = await waitForNurseAccess();
 
-    // Check if user is authenticated
-    if (!authStore.isAuthenticated || !authStore.user) {
-      throw new Error("Please log in to view the dashboard");
+    if (!success) {
+      throw new Error(authErr || "Please log in to view the dashboard");
     }
 
     // Fetch appointments for today
