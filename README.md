@@ -251,6 +251,33 @@ export NODE_ENV=production
 npm start
 ```
 
+### ☁️ Vercel Deployment
+
+This project is configured for deployment on Vercel with Serverless Functions:
+
+1. **Frontend**: Deployed as a single-page application (SPA)
+2. **Backend**: Deployed as Serverless Functions (`/api/*`) via the `/api` directory
+
+The configuration is handled automatically by `vercel.json` and `api/index.js`.
+
+**Important**: When deploying to Vercel, you must manually add the following Environment Variables in the Vercel Dashboard:
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_PUBLISHABLE_KEY`
+- `SUPABASE_SECRET_KEY` (Required for admin operations)
+- `JWT_SECRET`
+- `NODE_ENV` (Set to `production`)
+
+### 🧪 Local Production Testing
+
+To simulate the production environment locally (serving both the built frontend and the Express API on port 3000):
+
+```bash
+npm run preview:full
+```
+
+This ensures that API calls to `/api/...` work correctly alongside the static frontend assets, just like in production.
+
 ## 📊 Database Schema
 
 See the detailed schema in the project requirements for table structures including:

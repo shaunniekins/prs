@@ -892,6 +892,9 @@ GRANT ALL ON "Notification" TO service_role;
 GRANT SELECT, INSERT, DELETE ON "UserSessions" TO authenticated;
 GRANT ALL ON "UserSessions" TO service_role;
 
+GRANT SELECT, INSERT, UPDATE, DELETE ON "Report" TO authenticated;
+GRANT ALL ON "Report" TO service_role;
+
 -- Grant access to views
 GRANT SELECT ON appointment_details TO authenticated, service_role;
 GRANT SELECT ON patient_summary TO authenticated, service_role;
