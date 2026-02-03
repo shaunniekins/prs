@@ -319,6 +319,30 @@ export const appointmentService = {
 
     return { data, error };
   },
+
+  // Get appointments by date range (for cron jobs)
+  async getAppointmentsByDateRange(startDate, endDate) {
+    const { data, error } = await supabaseAdmin
+      .from("Appointment")
+      .select(
+        `
+        *,
+        Patients!inner(
+          *,
+          Users!inner(fullName, Email)
+        ),
+        Staff(
+          *,
+          Users(fullName)
+        )
+      `,
+      )
+      .gte("DateTime", startDate)
+      .lt("DateTime", endDate)
+      .order("DateTime", { ascending: true });
+
+    return { data, error };
+  },
 };
 
 // Staff services
