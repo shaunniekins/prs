@@ -4,8 +4,12 @@ import { supabase } from "./supabaseService.js";
 // Create an axios instance with default config
 // In production (Vercel), use relative URL. In development, use localhost:3000
 const apiBaseUrl =
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.PROD ? "/api" : "http://localhost:3000/api");
+  import.meta.env.VITE_API_URL &&
+  import.meta.env.VITE_API_URL !== "http://localhost:3000/api"
+    ? import.meta.env.VITE_API_URL
+    : import.meta.env.PROD
+      ? "/api"
+      : "http://localhost:3000/api";
 
 const api = axios.create({
   baseURL: apiBaseUrl,
