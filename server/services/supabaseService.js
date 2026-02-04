@@ -327,13 +327,13 @@ export const appointmentService = {
       .select(
         `
         *,
-        Patients!inner(
+        Patients!PatientID(
           *,
-          Users!inner(fullName, Email)
+          Users!UserID(fullName, Email)
         ),
-        Staff(
+        Staff!StaffID(
           *,
-          Users(fullName)
+          Users!UserID(fullName)
         )
       `,
       )
