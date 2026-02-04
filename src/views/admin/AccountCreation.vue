@@ -149,30 +149,7 @@ const isFormValid = computed(() => {
     formErrors.value.email = "Invalid email format.";
   }
 
-  // Contact number validation
-  if (accountForm.value.contactNumber?.trim()) {
-    const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
-    if (
-      !phoneRegex.test(
-        accountForm.value.contactNumber.replace(/[\s\-\(\)]/g, ""),
-      )
-    ) {
-      formErrors.value.contactNumber = "Invalid phone number format.";
-    }
-  }
-
-  // Emergency contact validation
-  if (accountForm.value.emergencyContactNumber?.trim()) {
-    const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
-    if (
-      !phoneRegex.test(
-        accountForm.value.emergencyContactNumber.replace(/[\s\-\(\)]/g, ""),
-      )
-    ) {
-      formErrors.value.emergencyContactNumber =
-        "Invalid emergency contact number format.";
-    }
-  }
+  // Contact and emergency contact number validation removed (regex check disabled)
 
   // Role-specific validations
   // if (accountForm.value.role === "Patient") {
