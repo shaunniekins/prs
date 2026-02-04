@@ -15,7 +15,7 @@ const apiBaseUrl =
   import.meta.env.VITE_API_URL &&
   import.meta.env.VITE_API_URL !== "http://localhost:3000/api"
     ? import.meta.env.VITE_API_URL
-    : import.meta.env.PROD
+    : import.meta.env.MODE === "production" // Use MODE instead of PROD (PROD can be false in some build configs)
       ? "/api"
       : "http://localhost:3000/api";
 
