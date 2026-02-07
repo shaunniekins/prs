@@ -33,7 +33,7 @@ const selectedAccount = ref(null);
 const accountForm = ref({
   username: "", // Auto-generated
   email: "",
-  role: "Staff", // Patient or Staff
+  role: "Nurse", // Patient, Nurse, or Admin
   firstName: "",
   lastName: "",
   suffix: "",
@@ -160,7 +160,7 @@ const isFormValid = computed(() => {
   //   }
   // }
 
-  if (accountForm.value.role === "Staff") {
+  if (["Nurse", "Admin"].includes(accountForm.value.role)) {
     // Note: Department and Specialty validation removed as fields are not in current schema
   }
 
@@ -759,7 +759,7 @@ const resetForm = () => {
   accountForm.value = {
     username: "",
     email: "",
-    role: "Staff",
+    role: "Nurse",
     firstName: "",
     lastName: "",
     suffix: "",
