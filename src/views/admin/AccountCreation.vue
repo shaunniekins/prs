@@ -8,6 +8,7 @@ import { useAuthStore } from "@/stores/auth.js";
 import { useAuthGuard } from "@/composables/useAuthGuard.js";
 import { VueDatePicker } from "@vuepic/vue-datepicker";
 import "@vuepic/vue-datepicker/dist/main.css";
+import { formatDateTimeClean } from "@/utils/dateUtils.js";
 
 // Auth store
 const authStore = useAuthStore();
@@ -226,7 +227,7 @@ const getTypeBadgeVariant = (type) => {
 };
 
 const formatDateTime = (dateTime) => {
-  return new Date(dateTime).toLocaleString();
+  return formatDateTimeClean(dateTime);
 };
 
 const loadingAccounts = ref(false);
@@ -234,25 +235,40 @@ const loadingAccounts = ref(false);
 const fetchCreatedAccounts = async () => {
   loadingAccounts.value = true;
   try {
-    const { data: users, error } = await supabase.from("Users").select(`
+    const { data: users, error } = await supabase.from("users_with_auth_info")
+      .select(`
         UserID,
         Username,
         Email,
         RoleName,
         fullName,
         created_at,
-        Patients:Patients!Patients_UserID_fkey ( UserID, FirstName, Surname ),
-        Staff ( UserID, FirstName, Surname )
+        credentials_sent_at,
+        credentials_last_sent_at,
+        credentials_sent_count,
+        last_sign_in_at
       `);
 
     if (error) {
       throw error;
     }
 
+    // Fetch Patients and Staff info separately
+    const { data: patients } = await supabase
+      .from("Patients")
+      .select("UserID, FirstName, Surname");
+    const { data: staff } = await supabase
+      .from("Staff")
+      .select("UserID, FirstName, Surname");
+
+    const patientsMap = new Map(patients?.map((p) => [p.UserID, p]) || []);
+    const staffMap = new Map(staff?.map((s) => [s.UserID, s]) || []);
+
     createdAccounts.value = users.map((user) => {
       const isPatient = user.RoleName === "patient";
-      // Safely access profile arrays which might be null
-      const profile = isPatient ? user.Patients?.[0] : user.Staff?.[0];
+      const profile = isPatient
+        ? patientsMap.get(user.UserID)
+        : staffMap.get(user.UserID);
       return {
         id: user.UserID,
         type: isPatient ? "patient" : "staff",
@@ -262,10 +278,13 @@ const fetchCreatedAccounts = async () => {
         username: user.Username,
         email: user.Email,
         role: user.RoleName,
-        status: "active", // Assuming all fetched accounts are active
+        status: "active",
         createdAt: user.created_at,
-        credentialsSent: false, // This information is not stored in the DB
-        lastLogin: null, // This information is not available
+        credentialsSent: !!user.credentials_sent_at,
+        credentialsSentAt: user.credentials_sent_at,
+        credentialsLastSentAt: user.credentials_last_sent_at,
+        credentialsSentCount: user.credentials_sent_count || 0,
+        lastLogin: user.last_sign_in_at,
       };
     });
   } catch (error) {
@@ -280,10 +299,9 @@ const fetchCreatedAccounts = async () => {
 const fetchAccountCreationHistory = async (params = {}) => {
   loadingHistory.value = true;
   try {
-    // Query Users table directly with Supabase instead of using Express API
-    // This ensures it works in deployed environments
+    // Query users_with_auth_info view to get last login data
     const { data: users, error } = await supabase
-      .from("Users")
+      .from("users_with_auth_info")
       .select(
         `
         UserID,
@@ -292,8 +310,10 @@ const fetchAccountCreationHistory = async (params = {}) => {
         RoleName,
         fullName,
         created_at,
-        Patients:Patients!Patients_UserID_fkey ( UserID, FirstName, Surname ),
-        Staff ( UserID, FirstName, Surname )
+        credentials_sent_at,
+        credentials_last_sent_at,
+        credentials_sent_count,
+        last_sign_in_at
       `,
       )
       .order("created_at", { ascending: false });
@@ -302,10 +322,23 @@ const fetchAccountCreationHistory = async (params = {}) => {
       throw error;
     }
 
+    // Fetch Patients and Staff info separately
+    const { data: patients } = await supabase
+      .from("Patients")
+      .select("UserID, FirstName, Surname");
+    const { data: staff } = await supabase
+      .from("Staff")
+      .select("UserID, FirstName, Surname");
+
+    const patientsMap = new Map(patients?.map((p) => [p.UserID, p]) || []);
+    const staffMap = new Map(staff?.map((s) => [s.UserID, s]) || []);
+
     // Transform data to match expected format
     accountHistory.value = users.map((user) => {
       const isPatient = user.RoleName === "patient";
-      const profile = isPatient ? user.Patients?.[0] : user.Staff?.[0];
+      const profile = isPatient
+        ? patientsMap.get(user.UserID)
+        : staffMap.get(user.UserID);
       return {
         id: user.UserID,
         type: isPatient ? "patient" : "staff",
@@ -319,7 +352,11 @@ const fetchAccountCreationHistory = async (params = {}) => {
         role: user.RoleName,
         status: "active",
         createdAt: user.created_at,
-        lastLogin: null,
+        credentialsSent: !!user.credentials_sent_at,
+        credentialsSentAt: user.credentials_sent_at,
+        credentialsLastSentAt: user.credentials_last_sent_at,
+        credentialsSentCount: user.credentials_sent_count || 0,
+        lastLogin: user.last_sign_in_at,
       };
     });
   } catch (error) {
@@ -407,9 +444,10 @@ const sendCredentials = async (retryCount = 0) => {
 
     await api.post("/emails/send-account-creation", {
       firstName: accountForm.value.firstName,
-      lastName: accountForm.value.lastName,
+      surname: accountForm.value.lastName,
       username: username,
       email: accountForm.value.email,
+      accountType: accountForm.value.role === "Patient" ? "patient" : "staff",
       role: accountForm.value.role,
       password: generatedPassword.value, // Pass the generated password
     });
@@ -418,6 +456,9 @@ const sendCredentials = async (retryCount = 0) => {
       type: "success",
       duration: 3000,
     });
+
+    // Refresh lists to show updated tracking data
+    await Promise.all([fetchCreatedAccounts(), fetchAccountCreationHistory()]);
   } catch (error) {
     console.error("Error sending credentials:", error);
 
@@ -482,12 +523,15 @@ const sendCredentialsFromModal = async () => {
     const account = createdAccountForEmail.value;
     await api.post("/emails/send-account-creation", {
       firstName: account.firstName,
-      lastName: account.lastName,
+      surname: account.lastName,
       username: account.username,
       email: account.email,
+      accountType:
+        account.role === "Patient" || account.role === "patient"
+          ? "patient"
+          : "staff",
       role: account.role,
       password: account.password, // Include password from createdAccountForEmail
-      // isCustomPassword: false,
     });
 
     notify("Credentials sent successfully!", {
@@ -495,6 +539,9 @@ const sendCredentialsFromModal = async () => {
       duration: 3000,
     });
     credentialsSentFromModal.value = true;
+
+    // Refresh lists to show updated tracking data
+    await Promise.all([fetchCreatedAccounts(), fetchAccountCreationHistory()]);
   } catch (error) {
     console.error("Error sending credentials:", error);
     notify("Failed to send credentials. Please try again.", {
@@ -620,6 +667,87 @@ const createAccount = async (retryCount = 0) => {
 
 const navigateToDashboard = () => {
   router.push("/admin/dashboard");
+};
+
+const resendingAccountId = ref(null);
+
+const resendCredentials = async (account) => {
+  resendingAccountId.value = account.id;
+  try {
+    // Regenerate password from stored name (same logic as generatedPassword computed)
+    const cleanSurname = (account.surname || "").trim().replace(/\s+/g, "");
+    const cleanFirstName = (account.firstName || "").trim().replace(/\s+/g, "");
+    const password = `${cleanSurname}_${cleanFirstName}0000`;
+
+    await api.post("/emails/send-account-creation", {
+      firstName: account.firstName,
+      surname: account.surname,
+      username: account.username,
+      email: account.email,
+      accountType:
+        account.type || (account.role === "patient" ? "patient" : "staff"),
+      role: account.role,
+      password: password,
+    });
+
+    notify("Credentials resent successfully!", {
+      type: "success",
+      duration: 3000,
+    });
+
+    // Refresh lists to show updated tracking data
+    await Promise.all([fetchCreatedAccounts(), fetchAccountCreationHistory()]);
+  } catch (error) {
+    console.error("Error resending credentials:", error);
+    notify("Failed to resend credentials. Please try again.", {
+      type: "error",
+      duration: 5000,
+    });
+  } finally {
+    resendingAccountId.value = null;
+  }
+};
+
+const deletingAccountId = ref(null);
+
+const deleteAccount = async (account) => {
+  const confirmed = window.confirm(
+    `Are you sure you want to delete the account for "${account.name || account.username}"? This action cannot be undone.`,
+  );
+
+  if (!confirmed) return;
+
+  deletingAccountId.value = account.id;
+  try {
+    await api.delete(`/admin/accounts/${account.id}`);
+    notify("Account deleted successfully!", {
+      type: "success",
+      duration: 3000,
+    });
+    // Refresh both lists
+    fetchCreatedAccounts();
+    fetchAccountCreationHistory();
+  } catch (error) {
+    console.error("Error deleting account:", error);
+    let errorMessage = "Failed to delete account.";
+    if (error.response?.status === 401) {
+      errorMessage = "Authentication failed. Please log in again.";
+    } else if (error.response?.status === 403) {
+      errorMessage = "You don't have permission to delete accounts.";
+    } else if (error.response?.status >= 500) {
+      errorMessage =
+        error.response?.data?.message ||
+        "Server error. Please try again later.";
+    } else if (error.message) {
+      errorMessage = `Failed to delete account: ${error.message}`;
+    }
+    notify(errorMessage, {
+      type: "error",
+      duration: 5000,
+    });
+  } finally {
+    deletingAccountId.value = null;
+  }
 };
 
 const closeModals = () => {
@@ -1059,15 +1187,43 @@ const resetForm = () => {
                         {{ account.status }}
                       </span>
                     </td>
-                    <td>{{ formatDateTime(account.createdAt) }}</td>
                     <td>
-                      <i
-                        v-if="account.credentialsSent"
-                        class="bi bi-check-circle text-success"
-                      ></i>
-                      <i v-else class="bi bi-x-circle text-danger"></i>
-                      <small class="ms-1">
-                        {{ account.credentialsSent ? "Sent" : "Failed" }}
+                      <small class="small">{{
+                        formatDateTime(account.createdAt)
+                      }}</small>
+                    </td>
+                    <td>
+                      <div v-if="account.credentialsSent">
+                        <div class="d-flex align-items-center gap-2">
+                          <i class="bi bi-check-circle-fill text-success"></i>
+                          <div>
+                            <small class="small">
+                              {{ formatDateTime(account.credentialsSentAt) }}
+                            </small>
+                            <small
+                              v-if="account.credentialsSentCount > 1"
+                              class="text-muted"
+                            >
+                              Sent {{ account.credentialsSentCount }} times
+                            </small>
+                            <small
+                              v-if="
+                                account.credentialsLastSentAt &&
+                                account.credentialsSentCount > 1
+                              "
+                              class="text-muted d-block"
+                            >
+                              Last:
+                              {{
+                                formatDateTime(account.credentialsLastSentAt)
+                              }}
+                            </small>
+                          </div>
+                        </div>
+                      </div>
+                      <small v-else class="text-muted">
+                        <i class="bi bi-x-circle"></i>
+                        Not sent
                       </small>
                     </td>
                     <td>
@@ -1088,14 +1244,30 @@ const resetForm = () => {
                         <button
                           class="btn btn-sm btn-outline-primary"
                           title="Resend Credentials"
+                          @click="resendCredentials(account)"
+                          :disabled="resendingAccountId === account.id"
                         >
-                          <i class="bi bi-send"></i>
+                          <i
+                            :class="
+                              resendingAccountId === account.id
+                                ? 'bi bi-hourglass-split animate-spin'
+                                : 'bi bi-send'
+                            "
+                          ></i>
                         </button>
                         <button
                           class="btn btn-sm btn-outline-danger"
                           title="Delete Account"
+                          @click="deleteAccount(account)"
+                          :disabled="deletingAccountId === account.id"
                         >
-                          <i class="bi bi-trash"></i>
+                          <i
+                            :class="
+                              deletingAccountId === account.id
+                                ? 'bi bi-hourglass-split animate-spin'
+                                : 'bi bi-trash'
+                            "
+                          ></i>
                         </button>
                       </div>
                     </td>

@@ -255,7 +255,7 @@ Baan KM-3 Health Center Information System
 
     // Send mail with defined transport object
     const info = await transporter.sendMail({
-      from: '"Baan KM-3 Health Center" <noreply@baankm3.com>', // sender address
+      from: `"Baan KM-3 Health Center" <${process.env.SMTP_FROM || "noreply@baankm3.com"}>`, // sender address
       to: email, // list of receivers
       subject: subject, // Subject line
       text: textContent, // plain text body
@@ -356,7 +356,7 @@ export async function sendAppointmentReminderEmail(appointment) {
     const textContent = `Dear ${patientName}, This is a reminder for your appointment on ${new Date(appointment.DateTime).toLocaleString()}.`;
 
     const info = await transporter.sendMail({
-      from: '"Baan KM-3 Health Center" <noreply@baankm3.com>',
+      from: `"Baan KM-3 Health Center" <${process.env.SMTP_FROM || "noreply@baankm3.com"}>`,
       to: email,
       subject: subject,
       text: textContent,

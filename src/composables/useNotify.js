@@ -5,7 +5,7 @@
 export function useNotify() {
   // Show a success notification
   const showSuccess = (message) => {
-    console.log("✅ Success:", message);
+    // console.log("✅ Success:", message);
     // You could also use a toast library here like vue-toastification
     alert(message); // Simple fallback
   };

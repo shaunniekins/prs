@@ -209,4 +209,30 @@ router.post("/", async (req, res) => {
   }
 });
 
+// DELETE /api/admin/accounts/:id
+router.delete("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({ message: "User ID is required." });
+    }
+
+    // Delete user from Supabase Auth and Users table
+    const { error } = await userService.deleteUser(id);
+
+    if (error) {
+      console.error("Error deleting user:", error);
+      return res.status(500).json({ message: error.message });
+    }
+
+    res.status(200).json({ message: "Account deleted successfully." });
+  } catch (error) {
+    console.error("Error deleting account:", error);
+    res.status(500).json({
+      message: error.message || "Internal server error",
+    });
+  }
+});
+
 export default router;

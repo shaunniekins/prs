@@ -1,7 +1,14 @@
 import express from "express";
 import { sendAccountCreationEmail } from "../services/emailService.js";
+import { createClient } from "@supabase/supabase-js";
 
 const router = express.Router();
+
+// Initialize Supabase client with service role key (for admin operations)
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SECRET_KEY,
+);
 
 /**
  * POST /api/emails/send-account-creation
@@ -46,6 +53,36 @@ router.post("/send-account-creation", async (req, res) => {
       role,
       password,
     });
+
+    // Update the Users table to track email sending
+    const { data: user, error: fetchError } = await supabase
+      .from("Users")
+      .select("credentials_sent_at, credentials_sent_count")
+      .eq("Email", email)
+      .single();
+
+    if (!fetchError && user) {
+      const isFirstSend = !user.credentials_sent_at;
+      const updateData = {
+        credentials_last_sent_at: new Date().toISOString(),
+        credentials_sent_count: (user.credentials_sent_count || 0) + 1,
+      };
+
+      // Set first send timestamp if this is the first time
+      if (isFirstSend) {
+        updateData.credentials_sent_at = new Date().toISOString();
+      }
+
+      const { error: updateError } = await supabase
+        .from("Users")
+        .update(updateData)
+        .eq("Email", email);
+
+      if (updateError) {
+        console.error("Failed to update credential tracking:", updateError);
+        // Don't fail the request, just log the error
+      }
+    }
 
     res.status(200).json({
       success: true,

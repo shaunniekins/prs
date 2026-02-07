@@ -96,6 +96,9 @@ CREATE TABLE IF NOT EXISTS "Users" (
     "Email" VARCHAR(255) NOT NULL UNIQUE,
     "RoleName" VARCHAR(50) REFERENCES "Role"("RoleName"),
     "fullName" TEXT,
+    "credentials_sent_at" TIMESTAMPTZ, -- When credentials were first sent
+    "credentials_last_sent_at" TIMESTAMPTZ, -- When credentials were last sent
+    "credentials_sent_count" INTEGER DEFAULT 0, -- Number of times sent
     "created_at" TIMESTAMPTZ DEFAULT NOW(),
     "updated_at" TIMESTAMPTZ DEFAULT NOW()
 );
@@ -484,6 +487,25 @@ SELECT
     (SELECT COUNT(*) FROM "Appointment" apt WHERE apt."PatientID" = p."PatientID") AS "AppointmentCount"
 FROM "Patients" p
 LEFT JOIN "Users" u ON p."UserID" = u."UserID";
+
+-- View for users with auth info (includes last login)
+CREATE OR REPLACE VIEW users_with_auth_info AS
+SELECT 
+    u."UserID",
+    u."Username",
+    u."Email",
+    u."RoleName",
+    u."fullName",
+    u."created_at",
+    u."updated_at",
+    u."credentials_sent_at",
+    u."credentials_last_sent_at",
+    u."credentials_sent_count",
+    au.last_sign_in_at,
+    au.email_confirmed_at,
+    au.created_at as auth_created_at
+FROM "Users" u
+LEFT JOIN auth.users au ON u."UserID" = au.id;
 
 -- =========================================
 -- ROW LEVEL SECURITY (RLS)
@@ -898,6 +920,7 @@ GRANT ALL ON "Report" TO service_role;
 -- Grant access to views
 GRANT SELECT ON appointment_details TO authenticated, service_role;
 GRANT SELECT ON patient_summary TO authenticated, service_role;
+GRANT SELECT ON users_with_auth_info TO authenticated, service_role;
 
 -- =========================================
 -- END OF COMPLETE SCHEMA
