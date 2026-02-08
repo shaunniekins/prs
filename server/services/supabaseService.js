@@ -46,9 +46,9 @@ const validateSupabaseConfig = () => {
     console.warn("⚠️ Supabase URL doesn't appear to be a valid Supabase URL");
   }
 
-  console.log("✅ Supabase server configuration validated");
-  console.log("   Publishable key: ✓");
-  console.log("   Secret key: ✓");
+  // console.log("✅ Supabase server configuration validated");
+  // console.log("   Publishable key: ✓");
+  // console.log("   Secret key: ✓");
 };
 
 // Validate configuration on load

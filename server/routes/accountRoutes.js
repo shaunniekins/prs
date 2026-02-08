@@ -7,6 +7,75 @@ import {
 
 const router = express.Router();
 
+// Helper function to wait for the Users record to be created by the database trigger
+// This is necessary because the trigger runs asynchronously after auth.users insert
+// If the trigger fails, this function will create the Users record manually as a fallback
+const waitForUserRecord = async (
+  userId,
+  userMetadata = {},
+  maxRetries = 10,
+  delayMs = 200,
+) => {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const { data, error } = await supabaseAdmin
+      .from("Users")
+      .select("UserID")
+      .eq("UserID", userId)
+      .single();
+
+    if (data && !error) {
+      // console.log(`✅ Users record found on attempt ${attempt}`);
+      return { success: true };
+    }
+
+    if (attempt < maxRetries) {
+      // console.log(
+      //   `⏳ Waiting for Users record (attempt ${attempt}/${maxRetries})...`,
+      // );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+
+  // Trigger failed to create the record - create it manually as a fallback
+  // console.warn(
+  //   `⚠️ Users record not found after ${maxRetries} attempts, creating manually...`,
+  // );
+
+  try {
+    const { email, username, fullName, role } = userMetadata;
+    const { data: manualData, error: manualError } = await supabaseAdmin
+      .from("Users")
+      .insert([
+        {
+          UserID: userId,
+          Email: email,
+          Username: username || email?.split("@")[0],
+          fullName: fullName,
+          RoleName: role?.toLowerCase() || "patient",
+          created_at: new Date().toISOString(),
+        },
+      ])
+      .select()
+      .single();
+
+    if (manualError) {
+      // Check if it's a duplicate error (record was created by trigger but we missed it)
+      if (manualError.code === "23505") {
+        // console.log("✅ Users record already exists (created by trigger)");
+        return { success: true };
+      }
+      // console.error("❌ Manual Users record creation failed:", manualError);
+      return { success: false, error: manualError.message };
+    }
+
+    console.log("✅ Users record created manually");
+    return { success: true };
+  } catch (err) {
+    // console.error("❌ Exception during manual Users record creation:", err);
+    return { success: false, error: err.message };
+  }
+};
+
 // GET /api/admin/account-creation-history
 router.get("/account-creation-history", async (req, res) => {
   try {
@@ -117,8 +186,27 @@ router.post("/", async (req, res) => {
 
     const userId = authData.user.id;
 
-    // Note: The database trigger 'handle_new_user_in_public_users' automatically
-    // creates the Users table entry, so we skip manual user profile creation.
+    // Wait for the database trigger to create the Users record
+    // This is necessary because the trigger runs after auth.users insert
+    // and we need the Users record to exist before creating Patients/Staff (FK constraint)
+    // If the trigger fails, the function will create the record manually
+    const { success: userRecordExists, error: waitError } =
+      await waitForUserRecord(userId, {
+        email,
+        username,
+        fullName,
+        role: role.toLowerCase(),
+      });
+
+    if (!userRecordExists) {
+      console.error("Users record creation failed or timed out:", waitError);
+      // Rollback: delete the auth user
+      await userService.deleteUser(userId);
+      return res.status(500).json({
+        message:
+          "Database error creating new user. The Users record was not created. Please try again.",
+      });
+    }
 
     // 3. Save account information to public.Patients or public.Staff table
     const roleLower = role.toLowerCase();

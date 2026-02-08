@@ -262,18 +262,18 @@ Baan KM-3 Health Center Information System
       html: htmlContent, // html body
     });
 
-    console.log("✅ Email sent: %s", info.messageId);
+    // console.log("✅ Email sent: %s", info.messageId);
 
     // If using Ethereal, log the preview URL
     const previewUrl = nodemailer.getTestMessageUrl(info);
-    if (previewUrl) {
-      console.log("📬 Preview URL: %s", previewUrl);
-      console.log("   (Click the URL above to view the sent email)");
-    }
+    // if (previewUrl) {
+    //   console.log("📬 Preview URL: %s", previewUrl);
+    //   console.log("   (Click the URL above to view the sent email)");
+    // }
 
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error("❌ Error sending email:", error.message);
+    // console.error("❌ Error sending email:", error.message);
     throw new Error(`Failed to send account creation email: ${error.message}`);
   }
 }
