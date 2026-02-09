@@ -30,6 +30,12 @@ const sendingCredentialsFromModal = ref(false);
 const credentialsSentFromModal = ref(false);
 const selectedAccount = ref(null);
 
+// Password Confirmation State
+const showPasswordConfirmModal = ref(false);
+const adminPassword = ref("");
+const confirmPasswordError = ref("");
+const verifyingPassword = ref(false);
+
 const accountForm = ref({
   username: "", // Auto-generated
   email: "",
@@ -553,10 +559,57 @@ const sendCredentialsFromModal = async () => {
   }
 };
 
-const createAccount = async (retryCount = 0) => {
-  const maxRetries = 3;
-  const retryDelay = 1000; // 1 second
+const verifyAndCreate = async () => {
+  if (!adminPassword.value) {
+    confirmPasswordError.value = "Password is required";
+    return;
+  }
 
+  verifyingPassword.value = true;
+  confirmPasswordError.value = "";
+
+  try {
+    // Determine the email to attempt login with
+    // Priorities: authStore.user.email (profile), authStore.supabaseUser.email (auth object), or extracted from metadata
+    const email =
+      authStore.user?.Email ||
+      authStore.user?.email ||
+      authStore.supabaseUser?.email;
+
+    if (!email) {
+      throw new Error(
+        "Could not verify administrator identity. Please refresh the page.",
+      );
+    }
+
+    // Attempt to sign in to verify password
+    // This re-authenticates the session, which verifies the password
+    const { error } = await authService.signIn(email, adminPassword.value);
+
+    if (error) {
+      throw error;
+    }
+
+    // If successful, close modal and proceed with creation
+    showPasswordConfirmModal.value = false;
+    await processAccountCreation();
+  } catch (error) {
+    console.error("Password verification failed:", error);
+    if (
+      error.message?.includes("Invalid login credentials") ||
+      error.message?.includes("invalid password") ||
+      error.message?.includes("Invalid identifier or password") // Supabase specific
+    ) {
+      confirmPasswordError.value = "Incorrect password. Please try again.";
+    } else {
+      confirmPasswordError.value = "Authentication error: " + error.message;
+    }
+  } finally {
+    verifyingPassword.value = false;
+  }
+};
+
+const createAccount = () => {
   formErrors.value = {};
   if (!isFormValid.value) {
     notify("Please complete the form before creating an account.", {
@@ -565,6 +618,16 @@ const createAccount = async (retryCount = 0) => {
     });
     return;
   }
+
+  // Open confirmation modal
+  adminPassword.value = "";
+  confirmPasswordError.value = "";
+  showPasswordConfirmModal.value = true;
+};
+
+const processAccountCreation = async (retryCount = 0) => {
+  const maxRetries = 3;
+  const retryDelay = 1000; // 1 second
 
   creatingAccount.value = true;
   try {
@@ -630,7 +693,7 @@ const createAccount = async (retryCount = 0) => {
       await new Promise((resolve) =>
         setTimeout(resolve, retryDelay * (retryCount + 1)),
       );
-      return createAccount(retryCount + 1);
+      return processAccountCreation(retryCount + 1);
     }
 
     // Provide user-friendly error messages
@@ -1477,6 +1540,72 @@ const resetForm = () => {
       class="modal-backdrop fade show"
       @click="handleSuccessModalClose"
     ></div>
+  <!-- Password Confirmation Modal -->
+    <div
+      v-if="showPasswordConfirmModal"
+      class="modal fade show"
+      style="display: block; background-color: rgba(0, 0, 0, 0.5)"
+      tabindex="-1"
+      role="dialog"
+    >
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              <i class="bi bi-shield-lock me-2"></i>
+              Confirm Action
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              @click="showPasswordConfirmModal = false"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <p>
+              Please enter your administrator password to confirm account
+              creation.
+            </p>
+            <div class="mb-3">
+              <label class="form-label">Password</label>
+              <input
+                type="password"
+                class="form-control"
+                v-model="adminPassword"
+                :class="{ 'is-invalid': confirmPasswordError }"
+                @keyup.enter="verifyAndCreate"
+                placeholder="Enter your password"
+                autofocus
+              />
+              <div class="invalid-feedback">{{ confirmPasswordError }}</div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              @click="showPasswordConfirmModal = false"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary"
+              @click="verifyAndCreate"
+              :disabled="verifyingPassword"
+            >
+              <span
+                v-if="verifyingPassword"
+                class="spinner-border spinner-border-sm me-1"
+                role="status"
+                aria-hidden="true"
+              ></span>
+              {{ verifyingPassword ? "Verifying..." : "Confirm & Create" }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
