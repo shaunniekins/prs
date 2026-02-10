@@ -326,14 +326,26 @@ export const appointmentService = {
       .from("Appointment")
       .select(
         `
-        *,
-        Patients!PatientID(
-          *,
-          Users!UserID(fullName, Email)
+        AppointmentID,
+        DateTime,
+        EndDateTime,
+        Status,
+        Reason,
+        Notes,
+        CreatedAt,
+        PatientID,
+        ScheduledBy,
+        Patients!fk_appointment_patientid(
+          PatientID,
+          FirstName,
+          Surname,
+          ContactNumber,
+          Users!Patients_UserID_fkey(Email, fullName)
         ),
-        Staff!StaffID(
-          *,
-          Users!UserID(fullName)
+        Staff!fk_appointment_scheduledby(
+          FirstName,
+          Surname,
+          Specialization
         )
       `,
       )

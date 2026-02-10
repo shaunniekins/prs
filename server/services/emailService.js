@@ -282,8 +282,14 @@ Baan KM-3 Health Center Information System
  * Generate appointment reminder email template
  */
 function generateAppointmentReminderEmailTemplate(appointment) {
-  const patientName = `${appointment.Patients.FirstName} ${appointment.Patients.Surname}`;
+  const patient = appointment.Patients || {};
+  const staff = appointment.Staff || {};
+  const patientName = `${patient.FirstName || ""} ${patient.Surname || ""}`.trim() || "Patient";
+  const staffName = staff.FirstName ? `${staff.FirstName} ${staff.Surname || ""}`.trim() : null;
+  const specialization = staff.Specialization || null;
+
   const dateTime = new Date(appointment.DateTime).toLocaleString("en-US", {
+    timeZone: "Asia/Manila",
     weekday: "long",
     year: "numeric",
     month: "long",
@@ -291,6 +297,19 @@ function generateAppointmentReminderEmailTemplate(appointment) {
     hour: "2-digit",
     minute: "2-digit",
   });
+
+  const endDateTime = appointment.EndDateTime
+    ? new Date(appointment.EndDateTime).toLocaleString("en-US", {
+        timeZone: "Asia/Manila",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null;
+
+  const status = appointment.Status || "Pending";
+  const reason = appointment.Reason || "General Check-up";
+  const notes = appointment.Notes || null;
+  const appointmentId = appointment.AppointmentID;
 
   return `
 <!DOCTYPE html>
@@ -300,31 +319,83 @@ function generateAppointmentReminderEmailTemplate(appointment) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Appointment Reminder</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; }
-        .container { padding: 20px; border: 1px solid #ddd; border-radius: 8px; margin-top: 20px; }
-        .header { color: #007bff; border-bottom: 2px solid #007bff; padding-bottom: 10px; margin-bottom: 20px; }
-        .details { background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0; }
-        .footer { font-size: 12px; color: #666; margin-top: 30px; text-align: center; border-top: 1px solid #eee; padding-top: 10px; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; background-color: #f8f9fa; }
+        .container { background-color: white; margin: 20px; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { text-align: center; border-bottom: 2px solid #007bff; padding-bottom: 15px; margin-bottom: 25px; }
+        .header h2 { color: #007bff; margin: 0; }
+        .header .logo { font-size: 20px; font-weight: bold; color: #007bff; margin-bottom: 5px; }
+        .greeting { font-size: 16px; margin-bottom: 15px; }
+        .details-box { background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin: 20px 0; }
+        .detail-row { display: flex; margin-bottom: 12px; padding: 8px 10px; background-color: white; border-radius: 5px; border-left: 4px solid #007bff; }
+        .detail-label { font-weight: bold; color: #495057; min-width: 140px; font-size: 14px; }
+        .detail-value { color: #212529; }
+        .status-badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 13px; font-weight: 600; }
+        .status-confirmed { background-color: #d4edda; color: #155724; }
+        .status-pending { background-color: #fff3cd; color: #856404; }
+        .status-default { background-color: #e2e3e5; color: #383d41; }
+        .notes-box { background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; padding: 12px 15px; margin: 15px 0; font-size: 14px; }
+        .reminder-note { background-color: #d1ecf1; border: 1px solid #bee5eb; border-radius: 5px; padding: 12px 15px; margin: 20px 0; color: #0c5460; }
+        .footer { text-align: center; margin-top: 25px; padding-top: 15px; border-top: 1px solid #dee2e6; color: #6c757d; font-size: 13px; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
+            <div class="logo">🏥 Baan KM-3 Health Center</div>
             <h2>Appointment Reminder</h2>
         </div>
-        <p>Dear ${patientName},</p>
-        <p>This is a friendly reminder about your upcoming appointment at <strong>Baan KM-3 Health Center</strong>.</p>
-        
-        <div class="details">
-            <p><strong>Date & Time:</strong> ${dateTime}</p>
-            <p><strong>Reason:</strong> ${appointment.Reason || "Check-up"}</p>
+
+        <div class="greeting">
+            <p>Dear <strong>${patientName}</strong>,</p>
+            <p>This is a friendly reminder about your upcoming appointment <strong>tomorrow</strong> at Baan KM-3 Health Center.</p>
         </div>
 
-        <p>Please arrive 10 minutes early. If you need to reschedule or cancel, please contact us immediately or manage your appointment through our online portal.</p>
+        <div class="details-box">
+            <h3 style="margin-top: 0; color: #007bff;">📋 Appointment Details</h3>
 
-        <p>Best regards,<br>Baan KM-3 Health Center Team</p>
+            <div class="detail-row">
+                <span class="detail-label">Appointment ID:</span>
+                <span class="detail-value">#${appointmentId}</span>
+            </div>
+
+            <div class="detail-row">
+                <span class="detail-label">Date & Time:</span>
+                <span class="detail-value">${dateTime}${endDateTime ? " - " + endDateTime : ""}</span>
+            </div>
+
+            <div class="detail-row">
+                <span class="detail-label">Status:</span>
+                <span class="detail-value">
+                    <span class="status-badge ${status.toLowerCase() === "confirmed" ? "status-confirmed" : status.toLowerCase() === "pending" ? "status-pending" : "status-default"}">${status}</span>
+                </span>
+            </div>
+
+            <div class="detail-row">
+                <span class="detail-label">Reason / Purpose:</span>
+                <span class="detail-value">${reason}</span>
+            </div>
+
+            ${staffName ? `<div class="detail-row">
+                <span class="detail-label">Attending Staff:</span>
+                <span class="detail-value">${staffName}${specialization ? " (" + specialization + ")" : ""}</span>
+            </div>` : ""}
+        </div>
+
+        ${notes ? `<div class="notes-box"><strong>📝 Additional Notes:</strong> ${notes}</div>` : ""}
+
+        <div class="reminder-note">
+            <strong>📌 Reminders:</strong>
+            <ul style="margin: 5px 0; padding-left: 20px;">
+                <li>Please arrive <strong>10 minutes early</strong> for registration.</li>
+                <li>Bring any relevant medical documents or previous records.</li>
+                <li>If you need to reschedule or cancel, please contact us as soon as possible or manage your appointment through our online portal.</li>
+            </ul>
+        </div>
+
+        <p>Best regards,<br><strong>Baan KM-3 Health Center Team</strong></p>
 
         <div class="footer">
+            <p><strong>Baan KM-3 Health Center Information System</strong></p>
             <p>This is an automated message. Please do not reply directly to this email.</p>
         </div>
     </div>
@@ -334,39 +405,55 @@ function generateAppointmentReminderEmailTemplate(appointment) {
 
 /**
  * Send appointment reminder email
+ * Data path: Appointment → Patients (via PatientID) → Users (via UserID) → Email
  */
 export async function sendAppointmentReminderEmail(appointment) {
   try {
     const transporter = await createTransporter();
 
-    // Extract email from the nested Users object
-    // Structure: appointment.Patients.Users.Email
-    const email = appointment.Patients?.Users?.Email;
+    // Extract email from the nested join:
+    // Appointment.Patients (FK: PatientID) → Patients.Users (FK: Patients_UserID_fkey) → Email
+    const patient = appointment.Patients;
+    const email = patient?.Users?.Email;
 
     if (!email) {
       console.warn(
-        `⚠️ No email found for patient ${appointment.Patients?.FirstName} (ID: ${appointment.PatientID})`,
+        `⚠️ No email found for patient ${patient?.FirstName || "Unknown"} ${patient?.Surname || ""} (PatientID: ${appointment.PatientID}). ` +
+        `Check that the patient has a linked Users record with an Email.`,
       );
-      return { success: false, message: "No email found" };
+      return { success: false, message: "No email found for patient" };
     }
 
-    const patientName = `${appointment.Patients.FirstName} ${appointment.Patients.Surname}`;
-    const subject = "Appointment Reminder - Baan KM-3 Health Center";
+    const patientName = `${patient.FirstName || ""} ${patient.Surname || ""}`.trim() || "Patient";
+    const staff = appointment.Staff;
+    const staffName = staff?.FirstName ? `${staff.FirstName} ${staff.Surname || ""}`.trim() : "Staff";
+
+    const appointmentDate = new Date(appointment.DateTime).toLocaleString("en-US", {
+      timeZone: "Asia/Manila",
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const subject = `Appointment Reminder (#${appointment.AppointmentID}) - ${appointmentDate} - Baan KM-3 Health Center`;
     const htmlContent = generateAppointmentReminderEmailTemplate(appointment);
-    const textContent = `Dear ${patientName}, This is a reminder for your appointment on ${new Date(appointment.DateTime).toLocaleString()}.`;
+    const textContent = `Dear ${patientName},\n\nThis is a reminder for your appointment tomorrow at Baan KM-3 Health Center.\n\nAppointment ID: #${appointment.AppointmentID}\nDate & Time: ${appointmentDate}\nStatus: ${appointment.Status || "Pending"}\nReason: ${appointment.Reason || "General Check-up"}${staff?.FirstName ? "\nAttending Staff: " + staffName : ""}${appointment.Notes ? "\nNotes: " + appointment.Notes : ""}\n\nPlease arrive 10 minutes early. If you need to reschedule or cancel, please contact us.\n\nBest regards,\nBaan KM-3 Health Center Team`;
 
     const info = await transporter.sendMail({
-      from: `"Baan KM-3 Health Center" <${process.env.SMTP_FROM || "noreply@baankm3.com"}>`,
+      from: `"Baan KM-3 Health Center" <${process.env.SMTP_FROM || process.env.GMAIL_USER || "noreply@baankm3.com"}>`,
       to: email,
       subject: subject,
       text: textContent,
       html: htmlContent,
     });
 
-    console.log(`✅ Reminder sent to ${email}: %s`, info.messageId);
-    return { success: true, messageId: info.messageId };
+    console.log(`✅ Reminder sent to ${email} for Appointment #${appointment.AppointmentID}: ${info.messageId}`);
+    return { success: true, messageId: info.messageId, email };
   } catch (error) {
-    console.error("❌ Error sending reminder:", error.message);
+    console.error(`❌ Error sending reminder for Appointment #${appointment.AppointmentID}:`, error.message);
     // Don't throw, just return failure so we can continue processing other reminders
     return { success: false, error: error.message };
   }
