@@ -284,8 +284,11 @@ Baan KM-3 Health Center Information System
 function generateAppointmentReminderEmailTemplate(appointment) {
   const patient = appointment.Patients || {};
   const staff = appointment.Staff || {};
-  const patientName = `${patient.FirstName || ""} ${patient.Surname || ""}`.trim() || "Patient";
-  const staffName = staff.FirstName ? `${staff.FirstName} ${staff.Surname || ""}`.trim() : null;
+  const patientName =
+    `${patient.FirstName || ""} ${patient.Surname || ""}`.trim() || "Patient";
+  const staffName = staff.FirstName
+    ? `${staff.FirstName} ${staff.Surname || ""}`.trim()
+    : null;
   const specialization = staff.Specialization || null;
 
   const dateTime = new Date(appointment.DateTime).toLocaleString("en-US", {
@@ -375,10 +378,14 @@ function generateAppointmentReminderEmailTemplate(appointment) {
                 <span class="detail-value">${reason}</span>
             </div>
 
-            ${staffName ? `<div class="detail-row">
+            ${
+              staffName
+                ? `<div class="detail-row">
                 <span class="detail-label">Attending Staff:</span>
                 <span class="detail-value">${staffName}${specialization ? " (" + specialization + ")" : ""}</span>
-            </div>` : ""}
+            </div>`
+                : ""
+            }
         </div>
 
         ${notes ? `<div class="notes-box"><strong>📝 Additional Notes:</strong> ${notes}</div>` : ""}
@@ -419,24 +426,30 @@ export async function sendAppointmentReminderEmail(appointment) {
     if (!email) {
       console.warn(
         `⚠️ No email found for patient ${patient?.FirstName || "Unknown"} ${patient?.Surname || ""} (PatientID: ${appointment.PatientID}). ` +
-        `Check that the patient has a linked Users record with an Email.`,
+          `Check that the patient has a linked Users record with an Email.`,
       );
       return { success: false, message: "No email found for patient" };
     }
 
-    const patientName = `${patient.FirstName || ""} ${patient.Surname || ""}`.trim() || "Patient";
+    const patientName =
+      `${patient.FirstName || ""} ${patient.Surname || ""}`.trim() || "Patient";
     const staff = appointment.Staff;
-    const staffName = staff?.FirstName ? `${staff.FirstName} ${staff.Surname || ""}`.trim() : "Staff";
+    const staffName = staff?.FirstName
+      ? `${staff.FirstName} ${staff.Surname || ""}`.trim()
+      : "Staff";
 
-    const appointmentDate = new Date(appointment.DateTime).toLocaleString("en-US", {
-      timeZone: "Asia/Manila",
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    const appointmentDate = new Date(appointment.DateTime).toLocaleString(
+      "en-US",
+      {
+        timeZone: "Asia/Manila",
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      },
+    );
 
     const subject = `Appointment Reminder (#${appointment.AppointmentID}) - ${appointmentDate} - Baan KM-3 Health Center`;
     const htmlContent = generateAppointmentReminderEmailTemplate(appointment);
@@ -450,10 +463,15 @@ export async function sendAppointmentReminderEmail(appointment) {
       html: htmlContent,
     });
 
-    console.log(`✅ Reminder sent to ${email} for Appointment #${appointment.AppointmentID}: ${info.messageId}`);
+    console.log(
+      `✅ Reminder sent to ${email} for Appointment #${appointment.AppointmentID}: ${info.messageId}`,
+    );
     return { success: true, messageId: info.messageId, email };
   } catch (error) {
-    console.error(`❌ Error sending reminder for Appointment #${appointment.AppointmentID}:`, error.message);
+    console.error(
+      `❌ Error sending reminder for Appointment #${appointment.AppointmentID}:`,
+      error.message,
+    );
     // Don't throw, just return failure so we can continue processing other reminders
     return { success: false, error: error.message };
   }
