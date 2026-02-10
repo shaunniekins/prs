@@ -35,6 +35,7 @@ import authRoutes from "./routes/auth.js";
 import reportRoutes from "./routes/reports.js";
 import emailRoutes from "./routes/emails.js";
 import accountRoutes from "./routes/accountRoutes.js";
+import cronRoutes from "./routes/cron.js";
 
 // Use routes
 app.use("/api/auth", authRoutes);
@@ -48,6 +49,7 @@ app.use("/api/consultation-notes", consultationNoteRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/emails", emailRoutes);
 app.use("/api/admin/accounts", accountRoutes);
+app.use("/api/cron", cronRoutes);
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {

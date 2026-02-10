@@ -3,6 +3,20 @@ import { appointmentService } from "../services/supabaseService.js";
 
 const router = express.Router();
 
+/**
+ * Ensure a DateTime string has the PHT timezone offset (+08:00).
+ * datetime-local inputs send "2026-02-28T14:30" with no offset.
+ * Without this, PostgreSQL TIMESTAMPTZ would assume UTC.
+ */
+function ensurePHT(dateTimeStr) {
+  if (!dateTimeStr) return dateTimeStr;
+  // If already has an offset (Z, +HH:MM, -HH:MM), leave it alone
+  if (/[Zz+\-]\d/.test(String(dateTimeStr))) return dateTimeStr;
+  // Append seconds if missing, then PHT offset
+  const str = String(dateTimeStr);
+  return str.length === 16 ? str + ":00+08:00" : str + "+08:00";
+}
+
 // Get all appointments
 router.get("/", async (req, res) => {
   try {
@@ -22,7 +36,7 @@ router.get("/", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const { data, error } = await appointmentService.getAppointmentById(
-      req.params.id
+      req.params.id,
     );
 
     if (error) {
@@ -49,7 +63,7 @@ router.post("/", async (req, res) => {
     const { data, error } = await appointmentService.createAppointment({
       ScheduledBy: scheduledBy,
       PatientID: patientId,
-      DateTime: dateTime,
+      DateTime: ensurePHT(dateTime),
       Reason: reason,
       Status: status || "pending",
     });
@@ -76,10 +90,10 @@ router.put("/:id", async (req, res) => {
       {
         ScheduledBy: scheduledBy,
         PatientID: patientId,
-        DateTime: dateTime,
+        DateTime: ensurePHT(dateTime),
         Reason: reason,
         Status: status,
-      }
+      },
     );
 
     if (error) {
@@ -115,7 +129,7 @@ router.delete("/:id", async (req, res) => {
 router.get("/patient/:patientId", async (req, res) => {
   try {
     const { data, error } = await appointmentService.getAppointmentsByPatient(
-      req.params.patientId
+      req.params.patientId,
     );
 
     if (error) {
@@ -134,7 +148,7 @@ router.get("/patient/:patientId", async (req, res) => {
 router.get("/staff/:staffId", async (req, res) => {
   try {
     const { data, error } = await appointmentService.getAppointmentsByStaff(
-      req.params.staffId
+      req.params.staffId,
     );
 
     if (error) {

@@ -465,11 +465,22 @@ export const useSupabase = () => {
         }
         // For patients, ScheduledBy is null (they're requesting, not scheduling)
 
+        // Ensure DateTime has PHT timezone offset (+08:00) so PostgreSQL
+        // stores it correctly. datetime-local input gives "2026-02-28T14:30"
+        // which has no offset — PostgreSQL would assume UTC without this fix.
+        const fixedData = { ...appointmentData };
+        if (
+          fixedData.DateTime &&
+          !String(fixedData.DateTime).match(/[Zz+\-]\d/)
+        ) {
+          fixedData.DateTime = fixedData.DateTime + ":00+08:00";
+        }
+
         const { data, error } = await supabase
           .from("Appointment")
           .insert([
             {
-              ...appointmentData,
+              ...fixedData,
               ScheduledBy: scheduledBy,
               CreatedAt: new Date().toISOString(),
             },
@@ -485,10 +496,19 @@ export const useSupabase = () => {
     // Update appointment
     async updateAppointment(id, appointmentData) {
       return withLoading(async () => {
+        // Ensure DateTime has PHT timezone offset (+08:00)
+        const fixedData = { ...appointmentData };
+        if (
+          fixedData.DateTime &&
+          !String(fixedData.DateTime).match(/[Zz+\-]\d/)
+        ) {
+          fixedData.DateTime = fixedData.DateTime + ":00+08:00";
+        }
+
         const { data, error } = await supabase
           .from("Appointment")
           .update({
-            ...appointmentData,
+            ...fixedData,
           })
           .eq("AppointmentID", id)
           .select()

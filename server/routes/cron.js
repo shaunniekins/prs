@@ -15,16 +15,27 @@ router.get("/reminders", async (req, res) => {
   try {
     console.log("⏰ Starting appointment reminder cron job...");
 
-    // logic: Get appointments for "Tomorrow"
-    // We'll calculate tomorrow based on the server time (UTC)
-    // You might want to adjust this for specific timezones if needed
+    // Calculate "tomorrow" in Philippine Time (PHT = UTC+8).
+    // DateTimes are stored with PHT offset, so we need PHT-based boundaries.
+    // PHT midnight = UTC 16:00 the day before.
     const now = new Date();
-    const tomorrowStart = new Date(now);
-    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-    tomorrowStart.setHours(0, 0, 0, 0);
+    const PHT_OFFSET_MS = 8 * 60 * 60 * 1000;
 
-    const tomorrowEnd = new Date(tomorrowStart);
-    tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
+    // Current time in PHT
+    const nowPHT = new Date(now.getTime() + PHT_OFFSET_MS);
+
+    // Tomorrow in PHT: take the PHT date, add 1 day, set to midnight PHT
+    const tomorrowPHTYear = nowPHT.getUTCFullYear();
+    const tomorrowPHTMonth = nowPHT.getUTCMonth();
+    const tomorrowPHTDay = nowPHT.getUTCDate() + 1;
+
+    // Tomorrow 00:00:00 PHT = yesterday 16:00:00 UTC
+    const tomorrowStart = new Date(
+      Date.UTC(tomorrowPHTYear, tomorrowPHTMonth, tomorrowPHTDay, 0, 0, 0) -
+        PHT_OFFSET_MS,
+    );
+    // Day-after-tomorrow 00:00:00 PHT
+    const tomorrowEnd = new Date(tomorrowStart.getTime() + 24 * 60 * 60 * 1000);
 
     console.log(
       `📅 Fetching appointments between ${tomorrowStart.toISOString()} and ${tomorrowEnd.toISOString()}`,
